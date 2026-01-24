@@ -20,6 +20,8 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
   const [loadingCombos, setLoadingCombos] = useState(false);
   const [showRulings, setShowRulings] = useState(false);
   const [showCombos, setShowCombos] = useState(false);
+  const [comboCardDetail, setComboCardDetail] = useState<Card | null>(null);
+  const [loadingComboCard, setLoadingComboCard] = useState<string | null>(null);
 
   useEffect(() => {
     if (showRulings && rulings.length === 0) {
@@ -38,6 +40,23 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
     // Load known combos immediately when card changes
     loadKnownCombos();
   }, [card.name]);
+
+  const handleComboCardClick = async (comboCardName: string) => {
+    setLoadingComboCard(comboCardName);
+    try {
+      const comboCard = await ScryfallService.getCardByName(comboCardName);
+      if (comboCard) {
+        setComboCardDetail(comboCard);
+      } else {
+        alert(`Could not find card: ${comboCardName}`);
+      }
+    } catch (error) {
+      console.error('Error loading combo card:', error);
+      alert(`Error loading card: ${comboCardName}`);
+    } finally {
+      setLoadingComboCard(null);
+    }
+  };
 
   const loadRulings = async () => {
     setLoadingRulings(true);
@@ -218,8 +237,17 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
                       </h4>
                       <div className="combos-list">
                         {knownCombos.map((combo, i) => (
-                          <div key={`known-${i}`} className={`combo-item combo-${combo.synergy}`}>
-                            <div className="combo-card">{combo.cardName}</div>
+                          <div 
+                            key={`known-${i}`} 
+                            className={`combo-item combo-${combo.synergy} ${loadingComboCard === combo.cardName ? 'loading' : ''}`}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => handleComboCardClick(combo.cardName)}
+                            title={`Click to view ${combo.cardName} details`}
+                          >
+                            <div className="combo-card" style={{ fontWeight: 600, color: 'var(--accent)' }}>
+                              {loadingComboCard === combo.cardName ? 'Loading...' : combo.cardName}
+                              <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', opacity: 0.7 }}>→</span>
+                            </div>
                             <div className="combo-reason">{combo.reason}</div>
                             <div className={`combo-badge combo-${combo.synergy}`}>
                               {combo.synergy.toUpperCase()}
@@ -239,8 +267,17 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
                       </h4>
                       <div className="combos-list">
                         {combos.map((combo, i) => (
-                          <div key={`deck-${i}`} className={`combo-item combo-${combo.synergy}`}>
-                            <div className="combo-card">{combo.cardName}</div>
+                          <div 
+                            key={`deck-${i}`} 
+                            className={`combo-item combo-${combo.synergy} ${loadingComboCard === combo.cardName ? 'loading' : ''}`}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => handleComboCardClick(combo.cardName)}
+                            title={`Click to view ${combo.cardName} details`}
+                          >
+                            <div className="combo-card" style={{ fontWeight: 600, color: 'var(--accent)' }}>
+                              {loadingComboCard === combo.cardName ? 'Loading...' : combo.cardName}
+                              <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', opacity: 0.7 }}>→</span>
+                            </div>
                             <div className="combo-reason">{combo.reason}</div>
                             <div className={`combo-badge combo-${combo.synergy}`}>
                               {combo.synergy.toUpperCase()}
@@ -275,6 +312,15 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
           )}
         </div>
       </div>
+
+      {comboCardDetail && (
+        <CardDetail
+          card={comboCardDetail}
+          deckCards={deckCards}
+          onAddToDeck={onAddToDeck}
+          onClose={() => setComboCardDetail(null)}
+        />
+      )}
     </div>
   );
 }

@@ -700,6 +700,17 @@ body {
   border-radius: 6px;
   border-left: 4px solid;
   position: relative;
+  transition: all 0.2s;
+}
+
+.combo-item:hover {
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.combo-item.loading {
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .combo-item.combo-high {
