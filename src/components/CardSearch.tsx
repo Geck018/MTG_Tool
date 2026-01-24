@@ -48,6 +48,7 @@ export function CardSearch({ onCardSelect, deckCards = [], wishlistCards = [], s
     // In search mode, show details instead of adding
     if (showAddButton) {
       handleCardDetail(card);
+      onCardSelect(card); // Update URL
     } else {
       setSelectedCard(card);
       onCardSelect(card);
@@ -58,6 +59,7 @@ export function CardSearch({ onCardSelect, deckCards = [], wishlistCards = [], s
 
   const handleCardDetail = (card: Card) => {
     setDetailCard(card);
+    onCardSelect(card); // Update URL for static link
   };
 
   return (

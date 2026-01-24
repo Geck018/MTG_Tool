@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDeck } from './hooks/useDeck';
 import { CardSearch } from './components/CardSearch';
 import { DeckList } from './components/DeckList';
@@ -7,11 +7,49 @@ import { DeckImporter } from './components/DeckImporter';
 import { DeckValidator } from './components/DeckValidator';
 import { ExportButton } from './components/ExportButton';
 import { KeywordAnalyzer } from './components/KeywordAnalyzer';
+import { CollectionViewer } from './components/CollectionViewer';
+import { CardDetail } from './components/CardDetail';
+import { ScryfallService } from './services/scryfall';
+import type { Card } from './types';
 import './App.css';
 
 function App() {
   const { deck, addCard, removeCard, updateQuantity, moveCard, toggleWishlist, removeFromWishlist, updateWishlistQuantity, clearDeck, setDeckName } = useDeck();
-  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'import' | 'validate' | 'keywords'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'import' | 'validate' | 'keywords'>('search');
+  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+
+  // Handle URL routing for card details
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.startsWith('#/card/')) {
+      const cardName = decodeURIComponent(hash.replace('#/card/', ''));
+      loadCardFromUrl(cardName);
+    }
+  }, []);
+
+  const loadCardFromUrl = async (cardName: string) => {
+    try {
+      const card = await ScryfallService.getCardByName(cardName);
+      if (card) {
+        setSelectedCard(card);
+        setActiveTab('search'); // Show search tab when viewing card
+      }
+    } catch (error) {
+      console.error('Error loading card from URL:', error);
+    }
+  };
+
+  const handleCardSelect = (card: Card) => {
+    setSelectedCard(card);
+    // Update URL without page reload
+    window.history.pushState({}, '', `#/card/${encodeURIComponent(card.name)}`);
+  };
+
+  const handleCloseCard = () => {
+    setSelectedCard(null);
+    // Clear URL hash
+    window.history.pushState({}, '', window.location.pathname);
+  };
 
   return (
     <div className="app">
@@ -49,6 +87,12 @@ function App() {
           Import Bulk
         </button>
         <button
+          className={activeTab === 'collection' ? 'active' : ''}
+          onClick={() => setActiveTab('collection')}
+        >
+          My Collection
+        </button>
+        <button
           className={activeTab === 'import' ? 'active' : ''}
           onClick={() => setActiveTab('import')}
         >
@@ -72,9 +116,7 @@ function App() {
         {activeTab === 'search' && (
           <div className="search-view">
             <CardSearch 
-              onCardSelect={() => {
-                // In search mode, clicking shows details instead
-              }} 
+              onCardSelect={handleCardSelect}
               deckCards={[...deck.cards, ...deck.sideboard].map(dc => dc.card)}
               wishlistCards={deck.wishlist.map(dc => dc.card)}
               showAddButton={true}
@@ -88,6 +130,23 @@ function App() {
                 }
               }}
             />
+            {selectedCard && (
+              <CardDetail
+                card={selectedCard}
+                deckCards={[...deck.cards, ...deck.sideboard].map(dc => dc.card)}
+                onAddToDeck={(card) => addCard(card)}
+                onAddToWishlist={(card) => {
+                  const inWishlist = deck.wishlist.some(wc => wc.card.id === card.id);
+                  if (inWishlist) {
+                    removeFromWishlist(card.id);
+                  } else {
+                    toggleWishlist(card, 1);
+                  }
+                }}
+                isWishlisted={deck.wishlist.some(wc => wc.card.id === selectedCard.id)}
+                onClose={handleCloseCard}
+              />
+            )}
           </div>
         )}
 
@@ -123,6 +182,10 @@ function App() {
               console.error('Failed to save bulk collection:', error);
             }
           }} />
+        )}
+
+        {activeTab === 'collection' && (
+          <CollectionViewer />
         )}
 
         {activeTab === 'import' && (

@@ -10,11 +10,18 @@ export class CSVService {
     const headerValues = this.parseCSVLine(lines[0]);
     const headers = headerValues.map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
     
-    const cardMap = new Map<string, BulkCard>(); // Group by name to sum quantities
+    const cards: BulkCard[] = [];
+    let skippedCount = 0;
     
     for (let i = 1; i < lines.length; i++) {
-      const values = this.parseCSVLine(lines[i]);
-      if (values.length === 0) continue;
+      const line = lines[i].trim();
+      if (!line) continue; // Skip empty lines
+      
+      const values = this.parseCSVLine(line);
+      if (values.length === 0) {
+        skippedCount++;
+        continue;
+      }
 
       let cardName = '';
       let quantity = 1;
@@ -40,23 +47,20 @@ export class CSVService {
       });
 
       if (cardName) {
-        // Group cards by name (case-insensitive) and sum quantities
-        const key = cardName.toLowerCase();
-        if (cardMap.has(key)) {
-          const existing = cardMap.get(key)!;
-          existing.quantity += quantity;
-        } else {
-          cardMap.set(key, {
-            name: cardName,
-            quantity,
-            set: set || undefined,
-            collector_number: collectorNumber || undefined
-          });
-        }
+        // Keep all individual entries (don't group)
+        cards.push({
+          name: cardName,
+          quantity,
+          set: set || undefined,
+          collector_number: collectorNumber || undefined
+        });
+      } else {
+        skippedCount++;
       }
     }
 
-    return Array.from(cardMap.values());
+    console.log(`Parsed ${cards.length} cards, skipped ${skippedCount} rows`);
+    return cards;
   }
 
   static async parseDeckCSV(csvText: string): Promise<DeckCard[]> {
