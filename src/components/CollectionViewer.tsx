@@ -1,35 +1,98 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { BulkCard } from '../types';
 import { CollectionService } from '../utils/collection';
 import { ScryfallService } from '../services/scryfall';
 import type { Card } from '../types';
 import { CardDetail } from './CardDetail';
+import { getCardCategory, getCategoryOrder, ALL_CATEGORIES, type CardCategory } from '../utils/cardCategories';
+
+interface CollectionCard extends BulkCard {
+  cardData?: Card;
+  loading?: boolean;
+}
+
+type SortOption = 'name' | 'cmc' | 'rarity' | 'set' | 'quantity';
+type ViewMode = 'tile' | 'list';
 
 export function CollectionViewer() {
-  const [collection, setCollection] = useState<BulkCard[]>([]);
+  const [collection, setCollection] = useState<CollectionCard[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
-  const [cardDetails, setCardDetails] = useState<Map<string, Card>>(new Map());
+  const [selectedCategory, setSelectedCategory] = useState<CardCategory | 'All'>('All');
+  const [sortBy, setSortBy] = useState<SortOption>('name');
+  const [viewMode, setViewMode] = useState<ViewMode>('tile');
 
   useEffect(() => {
     loadCollection();
   }, []);
 
+  useEffect(() => {
+    // Load card data for all cards (with batching to avoid rate limits)
+    if (collection.length > 0 && collection.some(c => !c.cardData && !c.loading)) {
+      loadCardDataBatch();
+    }
+  }, [collection.length]);
+
   const loadCollection = () => {
     const bulkCards = CollectionService.getBulkCollection();
-    setCollection(bulkCards);
+    setCollection(bulkCards.map(card => ({ ...card, loading: false })));
   };
 
-  const loadCardDetails = async (bulkCard: BulkCard) => {
-    if (cardDetails.has(bulkCard.name)) {
-      setSelectedCard(cardDetails.get(bulkCard.name)!);
+  const loadCardDataBatch = async () => {
+    const cardsToLoad = collection.filter(c => !c.cardData && !c.loading).slice(0, 10);
+    if (cardsToLoad.length === 0) return;
+    
+    // Mark as loading
+    setCollection(prev => prev.map(c => 
+      cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)
+        ? { ...c, loading: true }
+        : c
+    ));
+
+    // Load in parallel with delay to respect rate limits
+    for (const bulkCard of cardsToLoad) {
+      try {
+        const card = await ScryfallService.getCardByName(bulkCard.name, bulkCard.set);
+        if (card) {
+          setCollection(prev => prev.map(c => 
+            c.name === bulkCard.name && c.set === bulkCard.set
+              ? { ...c, cardData: card, loading: false }
+              : c
+          ));
+        } else {
+          setCollection(prev => prev.map(c => 
+            c.name === bulkCard.name && c.set === bulkCard.set
+              ? { ...c, loading: false }
+              : c
+          ));
+        }
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error('Error loading card:', error);
+        setCollection(prev => prev.map(c => 
+          c.name === bulkCard.name && c.set === bulkCard.set
+            ? { ...c, loading: false }
+            : c
+        ));
+      }
+    }
+  };
+
+  const loadCardDetails = async (bulkCard: CollectionCard) => {
+    if (bulkCard.cardData) {
+      setSelectedCard(bulkCard.cardData);
       return;
     }
 
     try {
       const card = await ScryfallService.getCardByName(bulkCard.name, bulkCard.set);
       if (card) {
-        setCardDetails(prev => new Map(prev).set(bulkCard.name, card));
+        setCollection(prev => prev.map(c => 
+          c.name === bulkCard.name && c.set === bulkCard.set
+            ? { ...c, cardData: card }
+            : c
+        ));
         setSelectedCard(card);
       }
     } catch (error) {
@@ -37,22 +100,99 @@ export function CollectionViewer() {
     }
   };
 
-  const filteredCollection = collection.filter(card =>
-    card.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (card.set && card.set.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredAndSorted = useMemo(() => {
+    let filtered = collection.filter(card => {
+      const matchesSearch = 
+        card.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (card.set && card.set.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+      const matchesCategory = selectedCategory === 'All' || 
+        (card.cardData && getCardCategory(card.cardData) === selectedCategory);
+      
+      return matchesSearch && matchesCategory;
+    });
+
+    // Sort
+    filtered = [...filtered].sort((a, b) => {
+      switch (sortBy) {
+        case 'name':
+          return a.name.localeCompare(b.name);
+        case 'cmc':
+          const cmcA = a.cardData?.cmc ?? 999;
+          const cmcB = b.cardData?.cmc ?? 999;
+          return cmcA - cmcB;
+        case 'rarity':
+          const rarityOrder: Record<string, number> = { 'common': 1, 'uncommon': 2, 'rare': 3, 'mythic': 4 };
+          const rarityA = rarityOrder[a.cardData?.rarity?.toLowerCase() || ''] || 0;
+          const rarityB = rarityOrder[b.cardData?.rarity?.toLowerCase() || ''] || 0;
+          return rarityB - rarityA;
+        case 'set':
+          const setA = a.set || '';
+          const setB = b.set || '';
+          return setA.localeCompare(setB);
+        case 'quantity':
+          return b.quantity - a.quantity;
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [collection, searchTerm, selectedCategory, sortBy]);
+
+  // Group by category
+  const groupedByCategory = useMemo(() => {
+    const groups: Record<CardCategory, CollectionCard[]> = {
+      'Basic Land': [],
+      'Nonbasic Land': [],
+      'Artifact': [],
+      'Creature': [],
+      'Planeswalker': [],
+      'Instant': [],
+      'Sorcery': [],
+      'Enchantment': [],
+      'Other': []
+    };
+
+    filteredAndSorted.forEach(card => {
+      if (card.cardData) {
+        const category = getCardCategory(card.cardData);
+        groups[category].push(card);
+      } else {
+        groups['Other'].push(card);
+      }
+    });
+
+    // Remove empty categories
+    return Object.entries(groups)
+      .filter(([_, cards]) => cards.length > 0)
+      .sort(([catA], [catB]) => {
+        const orderA = getCategoryOrder(catA as CardCategory);
+        const orderB = getCategoryOrder(catB as CardCategory);
+        return orderA - orderB;
+      })
+      .map(([category, cards]) => ({ category: category as CardCategory, cards }));
+  }, [filteredAndSorted]);
 
   const totalCards = collection.reduce((sum, card) => sum + card.quantity, 0);
   const uniqueCards = collection.length;
+  const cardsWithData = collection.filter(c => c.cardData).length;
+  const loadingProgress = uniqueCards > 0 ? `${cardsWithData}/${uniqueCards}` : '';
 
   return (
     <div className="collection-viewer">
       <div className="collection-header">
         <h2 className="panel-title">My Collection</h2>
         <div className="collection-stats">
-          <span>{uniqueCards} unique cards</span>
+          <span>{uniqueCards} unique</span>
           <span>•</span>
-          <span>{totalCards} total cards</span>
+          <span>{totalCards} total</span>
+          {cardsWithData < uniqueCards && (
+            <>
+              <span>•</span>
+              <span>Loading: {loadingProgress}</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -64,13 +204,49 @@ export function CollectionViewer() {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
+        <select
+          className="filter-select"
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(e.target.value as CardCategory | 'All')}
+        >
+          <option value="All">All Categories</option>
+          {ALL_CATEGORIES.map(cat => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
+        </select>
+        <select
+          className="sort-select"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as SortOption)}
+        >
+          <option value="name">Sort by Name</option>
+          <option value="cmc">Sort by CMC</option>
+          <option value="rarity">Sort by Rarity</option>
+          <option value="set">Sort by Set</option>
+          <option value="quantity">Sort by Quantity</option>
+        </select>
+        <div className="view-mode-toggle">
+          <button
+            className={`view-mode-btn ${viewMode === 'tile' ? 'active' : ''}`}
+            onClick={() => setViewMode('tile')}
+            title="Tile View"
+          >
+            ⬜
+          </button>
+          <button
+            className={`view-mode-btn ${viewMode === 'list' ? 'active' : ''}`}
+            onClick={() => setViewMode('list')}
+            title="List View"
+          >
+            ☰
+          </button>
+        </div>
         <button
           className="btn btn-secondary"
           onClick={() => {
             if (confirm('Clear all collection data? This cannot be undone.')) {
               localStorage.removeItem('mtg_bulk_collection');
               setCollection([]);
-              setCardDetails(new Map());
             }
           }}
         >
@@ -87,30 +263,104 @@ export function CollectionViewer() {
         </div>
       ) : (
         <>
-          <div className="collection-list">
-            {filteredCollection.length === 0 ? (
-              <div className="empty-state">No cards match your search.</div>
-            ) : (
-              filteredCollection.map((bulkCard, index) => (
-                <div
-                  key={`${bulkCard.name}-${bulkCard.set}-${bulkCard.collector_number}-${index}`}
-                  className="collection-item"
-                  onClick={() => loadCardDetails(bulkCard)}
-                >
-                  <div className="collection-item-main">
-                    <div className="collection-item-name">{bulkCard.name}</div>
-                    <div className="collection-item-meta">
-                      {bulkCard.set && <span className="collection-item-set">{bulkCard.set}</span>}
-                      {bulkCard.collector_number && (
-                        <span className="collection-item-number">#{bulkCard.collector_number}</span>
-                      )}
-                    </div>
+          {viewMode === 'tile' ? (
+            <div className="collection-tiles">
+              {groupedByCategory.map(({ category, cards }) => (
+                <div key={category} className="collection-category">
+                  <h3 className="category-header">
+                    {category} ({cards.length})
+                  </h3>
+                  <div className="tile-grid">
+                    {cards.map((bulkCard, index) => (
+                      <div
+                        key={`${bulkCard.name}-${bulkCard.set}-${bulkCard.collector_number}-${index}`}
+                        className="collection-tile"
+                        onClick={() => loadCardDetails(bulkCard)}
+                      >
+                        {bulkCard.loading ? (
+                          <div className="tile-loading">Loading...</div>
+                        ) : bulkCard.cardData?.image_uris?.normal ? (
+                          <img
+                            src={bulkCard.cardData.image_uris.normal}
+                            alt={bulkCard.name}
+                            className="tile-image"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="tile-placeholder">
+                            <div className="tile-placeholder-name">{bulkCard.name}</div>
+                            <div className="tile-placeholder-type">
+                              {bulkCard.cardData?.type_line || 'Loading...'}
+                            </div>
+                          </div>
+                        )}
+                        <div className="tile-overlay">
+                          <div className="tile-name">{bulkCard.name}</div>
+                          <div className="tile-quantity">×{bulkCard.quantity}</div>
+                          {bulkCard.cardData && (
+                            <div className="tile-meta">
+                              {bulkCard.cardData.mana_cost && (
+                                <span className="tile-mana">{bulkCard.cardData.mana_cost}</span>
+                              )}
+                              {bulkCard.set && (
+                                <span className="tile-set">{bulkCard.set}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="collection-item-quantity">×{bulkCard.quantity}</div>
                 </div>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="collection-list">
+              {filteredAndSorted.length === 0 ? (
+                <div className="empty-state">No cards match your filters.</div>
+              ) : (
+                filteredAndSorted.map((bulkCard, index) => (
+                  <div
+                    key={`${bulkCard.name}-${bulkCard.set}-${bulkCard.collector_number}-${index}`}
+                    className="collection-item"
+                    onClick={() => loadCardDetails(bulkCard)}
+                  >
+                    {bulkCard.cardData?.image_uris?.small && (
+                      <img
+                        src={bulkCard.cardData.image_uris.small}
+                        alt={bulkCard.name}
+                        className="collection-item-image"
+                      />
+                    )}
+                    <div className="collection-item-main">
+                      <div className="collection-item-name">{bulkCard.name}</div>
+                      <div className="collection-item-meta">
+                        {bulkCard.cardData && (
+                          <>
+                            <span className="collection-item-type">
+                              {getCardCategory(bulkCard.cardData)}
+                            </span>
+                            {bulkCard.cardData.mana_cost && (
+                              <span className="collection-item-mana">
+                                {bulkCard.cardData.mana_cost}
+                              </span>
+                            )}
+                          </>
+                        )}
+                        {bulkCard.set && <span className="collection-item-set">{bulkCard.set}</span>}
+                        {bulkCard.collector_number && (
+                          <span className="collection-item-number">#{bulkCard.collector_number}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="collection-item-quantity">×{bulkCard.quantity}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
 
           {selectedCard && (
             <CardDetail
