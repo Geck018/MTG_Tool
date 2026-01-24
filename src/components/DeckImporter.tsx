@@ -27,15 +27,13 @@ export function DeckImporter({ onDeckImported }: DeckImporterProps) {
   const parseDeckList = (text: string): Array<{ quantity: number; name: string }> => {
     const lines = text.trim().split('\n');
     const cards: Array<{ quantity: number; name: string }> = [];
-    let inSideboard = false;
 
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('//')) continue;
 
-      // Check for sideboard marker
+      // Check for sideboard marker (skip for now, sideboard handled separately)
       if (trimmed.toLowerCase().includes('sideboard') || trimmed === 'SB:') {
-        inSideboard = true;
         continue;
       }
 

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { Deck, DeckCard, Card } from '../types';
+import type { Deck, Card } from '../types';
 
 export function useDeck(initialDeck?: Deck) {
   const [deck, setDeck] = useState<Deck>(

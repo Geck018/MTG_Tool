@@ -14,7 +14,7 @@ export function CardSearch({ onCardSelect, deckCards = [] }: CardSearchProps) {
   const [loading, setLoading] = useState(false);
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [detailCard, setDetailCard] = useState<Card | null>(null);
-  const debounceRef = useRef<NodeJS.Timeout>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     if (debounceRef.current) {

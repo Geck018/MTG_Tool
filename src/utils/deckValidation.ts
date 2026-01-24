@@ -1,4 +1,4 @@
-import type { Deck, DeckCard } from '../types';
+import type { Deck, DeckCard, Card } from '../types';
 
 export interface DeckValidationResult {
   isValid: boolean;
@@ -83,7 +83,6 @@ export class DeckValidator {
     }
 
     const landCount = this.getLandCount(mainDeck);
-    const nonLandCount = mainDeckCount - landCount;
     const landRatio = landCount / mainDeckCount;
     
     if (landRatio < 0.35) {

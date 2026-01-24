@@ -18,7 +18,6 @@ export class ComboAnalyzer {
   static async findCombos(card: Card, deckCards: Card[]): Promise<CardCombo[]> {
     const combos: CardCombo[] = [];
     const oracleText = (card.oracle_text || '').toLowerCase();
-    const cardName = card.name.toLowerCase();
 
     // Analyze card text for combo potential
     for (const [mechanic, keywords] of Object.entries(this.comboPatterns)) {

@@ -1,4 +1,4 @@
-import type { BulkCard, DeckCard, Card } from '../types';
+import type { BulkCard, DeckCard } from '../types';
 import { ScryfallService } from '../services/scryfall';
 
 export class CSVService {
