@@ -4,7 +4,11 @@ import { ScryfallService } from '../services/scryfall';
 export class CSVService {
   static parseBulkCSV(csvText: string): BulkCard[] {
     const lines = csvText.trim().split('\n');
-    const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
+    if (lines.length < 2) return [];
+    
+    // Parse header row using the same CSV parser to handle quotes correctly
+    const headerValues = this.parseCSVLine(lines[0]);
+    const headers = headerValues.map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
     
     const cardMap = new Map<string, BulkCard>(); // Group by name to sum quantities
     
@@ -18,9 +22,10 @@ export class CSVService {
       let collectorNumber = '';
 
       headers.forEach((header, index) => {
-        const value = values[index]?.trim() || '';
+        // Remove quotes from values
+        const value = (values[index] || '').trim().replace(/^"|"$/g, '');
         
-        if (header.includes('card name') || (header.includes('name') && !header.includes('set'))) {
+        if (header.includes('card name') || (header.includes('name') && !header.includes('set') && !header.includes('container'))) {
           cardName = value;
         } else if (header.includes('quantity') || header.includes('qty') || header.includes('count')) {
           quantity = parseInt(value) || 1;
@@ -29,7 +34,7 @@ export class CSVService {
         } else if (header.includes('set name') && !set) {
           // Use set name if set code not available
           set = value;
-        } else if (header.includes('collector number') || (header.includes('number') && !header.includes('set'))) {
+        } else if (header.includes('collector number') || (header.includes('number') && !header.includes('set') && !header.includes('price'))) {
           collectorNumber = value;
         }
       });
