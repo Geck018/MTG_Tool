@@ -9,13 +9,16 @@ import { ExportButton } from './components/ExportButton';
 import { KeywordAnalyzer } from './components/KeywordAnalyzer';
 import { CollectionViewer } from './components/CollectionViewer';
 import { CardDetail } from './components/CardDetail';
+import { DeckGenerator } from './components/DeckGenerator';
 import { ScryfallService } from './services/scryfall';
+import { MECHANICS } from './services/deckGenerator';
 import type { Card } from './types';
+import type { GeneratedDeck } from './services/deckGenerator';
 import './App.css';
 
 function App() {
   const { deck, addCard, removeCard, updateQuantity, moveCard, toggleWishlist, removeFromWishlist, updateWishlistQuantity, clearDeck, setDeckName } = useDeck();
-  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'import' | 'validate' | 'keywords'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'generate' | 'import' | 'validate' | 'keywords'>('search');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
 
   // Handle URL routing for card details
@@ -91,6 +94,12 @@ function App() {
           onClick={() => setActiveTab('collection')}
         >
           My Collection
+        </button>
+        <button
+          className={activeTab === 'generate' ? 'active' : ''}
+          onClick={() => setActiveTab('generate')}
+        >
+          Generate Deck
         </button>
         <button
           className={activeTab === 'import' ? 'active' : ''}
@@ -186,6 +195,23 @@ function App() {
 
         {activeTab === 'collection' && (
           <CollectionViewer />
+        )}
+
+        {activeTab === 'generate' && (
+          <DeckGenerator onDeckGenerated={(generatedDeck: GeneratedDeck) => {
+            // Clear current deck
+            clearDeck();
+            // Add generated deck cards
+            generatedDeck.cards.forEach(dc => {
+              addCard(dc.card, dc.quantity, false);
+            });
+            // Add suggested cards to wishlist
+            generatedDeck.suggestedCards.forEach(suggestion => {
+              toggleWishlist(suggestion.card, 1);
+            });
+            setDeckName(`${MECHANICS.find(m => m.id === generatedDeck.mechanic)?.name || 'Generated'} Deck`);
+            setActiveTab('build');
+          }} />
         )}
 
         {activeTab === 'import' && (
