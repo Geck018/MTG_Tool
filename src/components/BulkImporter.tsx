@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { BulkCard } from '../types';
 import { CSVService } from '../utils/csv';
-import { ScryfallService } from '../services/scryfall';
 
 interface BulkImporterProps {
   onCardsImported: (cards: BulkCard[]) => void;
@@ -42,24 +41,20 @@ export function BulkImporter({ onCardsImported }: BulkImporterProps) {
         return;
       }
 
-      // Import cards into collection (for now, just show success)
-      // In a full implementation, you'd store this in local storage or state
-      let imported = 0;
-      let failed = 0;
-
-      for (const bulkCard of bulkCards.slice(0, 50)) { // Limit to 50 for demo
-        const card = await ScryfallService.getCardByName(bulkCard.name, bulkCard.set);
-        if (card) {
-          imported++;
-        } else {
-          failed++;
-        }
+      // Store all bulk cards in localStorage
+      // We store the raw bulk data, not the full card objects (saves space)
+      try {
+        localStorage.setItem('mtg_bulk_collection', JSON.stringify(bulkCards));
+        setMessage({
+          type: 'success',
+          text: `Imported ${bulkCards.length} cards to your collection! You can now see which cards you have vs. need.`
+        });
+      } catch (error) {
+        setMessage({
+          type: 'error',
+          text: `Error saving collection: ${error instanceof Error ? error.message : 'Unknown error'}`
+        });
       }
-
-      setMessage({
-        type: 'success',
-        text: `Imported ${imported} cards. ${failed} cards could not be found.`
-      });
 
       onCardsImported(bulkCards);
       setCsvText('');

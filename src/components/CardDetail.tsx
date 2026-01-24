@@ -24,6 +24,7 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onAddToWishlist,
   const [showCombos, setShowCombos] = useState(false);
   const [comboCardDetail, setComboCardDetail] = useState<Card | null>(null);
   const [loadingComboCard, setLoadingComboCard] = useState<string | null>(null);
+  const [cardHistory, setCardHistory] = useState<Card[]>([]);
 
   useEffect(() => {
     if (showRulings && rulings.length === 0) {
@@ -48,6 +49,7 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onAddToWishlist,
     try {
       const comboCard = await ScryfallService.getCardByName(comboCardName);
       if (comboCard) {
+        setCardHistory(prev => [...prev, card]);
         setComboCardDetail(comboCard);
       } else {
         alert(`Could not find card: ${comboCardName}`);
@@ -57,6 +59,16 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onAddToWishlist,
       alert(`Error loading card: ${comboCardName}`);
     } finally {
       setLoadingComboCard(null);
+    }
+  };
+
+  const handleBackToPrevious = () => {
+    if (cardHistory.length > 0) {
+      const previousCard = cardHistory[cardHistory.length - 1];
+      setComboCardDetail(previousCard);
+      setCardHistory(prev => prev.slice(0, -1));
+    } else {
+      setComboCardDetail(null);
     }
   };
 
@@ -123,9 +135,18 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onAddToWishlist,
     <div className="card-detail-overlay" onClick={onClose}>
       <div className="card-detail" onClick={(e) => e.stopPropagation()}>
         <div className="card-detail-header">
+          {cardHistory.length > 0 && (
+            <button 
+              className="card-detail-back" 
+              onClick={handleBackToPrevious}
+              title="Back to previous card"
+            >
+              ← {cardHistory[cardHistory.length - 1].name}
+            </button>
+          )}
           <h2 className="card-detail-name">{card.name}</h2>
           {onClose && (
-            <button className="card-detail-close" onClick={onClose}>×</button>
+            <button className="card-detail-close" onClick={onClose} title="Close">×</button>
           )}
         </div>
 
@@ -329,14 +350,30 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onAddToWishlist,
       </div>
 
       {comboCardDetail && (
-        <CardDetail
-          card={comboCardDetail}
-          deckCards={deckCards}
-          onAddToDeck={onAddToDeck}
-          onAddToWishlist={onAddToWishlist}
-          isWishlisted={deckCards.some(dc => dc.id === comboCardDetail.id)}
-          onClose={() => setComboCardDetail(null)}
-        />
+        <div className="card-detail-overlay" onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            if (cardHistory.length > 0) {
+              handleBackToPrevious();
+            } else {
+              setComboCardDetail(null);
+            }
+          }
+        }}>
+          <CardDetail
+            card={comboCardDetail}
+            deckCards={deckCards}
+            onAddToDeck={onAddToDeck}
+            onAddToWishlist={onAddToWishlist}
+            isWishlisted={deckCards.some(dc => dc.id === comboCardDetail.id)}
+            onClose={() => {
+              if (cardHistory.length > 0) {
+                handleBackToPrevious();
+              } else {
+                setComboCardDetail(null);
+              }
+            }}
+          />
+        </div>
       )}
     </div>
   );

@@ -6,37 +6,52 @@ export class CSVService {
     const lines = csvText.trim().split('\n');
     const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
     
-    const cards: BulkCard[] = [];
+    const cardMap = new Map<string, BulkCard>(); // Group by name to sum quantities
     
     for (let i = 1; i < lines.length; i++) {
       const values = this.parseCSVLine(lines[i]);
       if (values.length === 0) continue;
 
-      const card: BulkCard = {
-        name: '',
-        quantity: 1
-      };
+      let cardName = '';
+      let quantity = 1;
+      let set = '';
+      let collectorNumber = '';
 
       headers.forEach((header, index) => {
         const value = values[index]?.trim() || '';
         
-        if (header.includes('name') || header.includes('card')) {
-          card.name = value;
+        if (header.includes('card name') || (header.includes('name') && !header.includes('set'))) {
+          cardName = value;
         } else if (header.includes('quantity') || header.includes('qty') || header.includes('count')) {
-          card.quantity = parseInt(value) || 1;
-        } else if (header.includes('set') || header.includes('edition')) {
-          card.set = value;
-        } else if (header.includes('number') || header.includes('collector')) {
-          card.collector_number = value;
+          quantity = parseInt(value) || 1;
+        } else if (header.includes('set code')) {
+          set = value;
+        } else if (header.includes('set name') && !set) {
+          // Use set name if set code not available
+          set = value;
+        } else if (header.includes('collector number') || (header.includes('number') && !header.includes('set'))) {
+          collectorNumber = value;
         }
       });
 
-      if (card.name) {
-        cards.push(card);
+      if (cardName) {
+        // Group cards by name (case-insensitive) and sum quantities
+        const key = cardName.toLowerCase();
+        if (cardMap.has(key)) {
+          const existing = cardMap.get(key)!;
+          existing.quantity += quantity;
+        } else {
+          cardMap.set(key, {
+            name: cardName,
+            quantity,
+            set: set || undefined,
+            collector_number: collectorNumber || undefined
+          });
+        }
       }
     }
 
-    return cards;
+    return Array.from(cardMap.values());
   }
 
   static async parseDeckCSV(csvText: string): Promise<DeckCard[]> {
@@ -84,22 +99,37 @@ export class CSVService {
 
   static exportToCSVWithWishlist(allCards: DeckCard[], wishlist: DeckCard[]): string {
     const wishlistCardIds = new Set(wishlist.map(wc => wc.card.id));
-    const lines = ['Name,Quantity,Set,Collector Number,CMC,Type,Colors,Status'];
+    // MythicTools format header
+    const lines = ['Card Name,Set Code,Set Name,Collector Number,Rarity,Language,Quantity,Condition,Finish,Altered,Signed,Misprint,Price (USD),Price (EUR),Price (USD Foil),Price (EUR Foil),Price (USD Etched),Price (EUR Etched),Scryfall ID,Container Type,Container Name,Status'];
     
     // Add deck cards (not in wishlist)
     for (const deckCard of allCards) {
       if (!wishlistCardIds.has(deckCard.card.id)) {
         const card = deckCard.card;
         const name = `"${card.name}"`;
-        const quantity = deckCard.quantity;
-        const set = card.set_name || '';
+        const setCode = card.set_name ? this.getSetCode(card.set_name) : '';
+        const setName = `"${card.set_name || ''}"`;
         const collectorNumber = card.collector_number || '';
-        const cmc = card.cmc || 0;
-        const type = `"${card.type_line}"`;
-        const colors = card.colors.join('') || 'Colorless';
+        const rarity = card.rarity || 'unknown';
+        const language = 'en';
+        const quantity = deckCard.quantity;
+        const condition = 'NM';
+        const finish = 'nonfoil';
+        const altered = 'false';
+        const signed = 'false';
+        const misprint = 'false';
+        const priceUsd = card.prices?.usd || '0';
+        const priceEur = '0';
+        const priceUsdFoil = card.prices?.usd_foil || '0';
+        const priceEurFoil = '0';
+        const priceUsdEtched = '0';
+        const priceEurEtched = '0';
+        const scryfallId = card.id || '';
+        const containerType = 'deck';
+        const containerName = 'Main Deck';
         const status = 'In Deck';
         
-        lines.push(`${name},${quantity},${set},${collectorNumber},${cmc},${type},${colors},${status}`);
+        lines.push(`${name},${setCode},${setName},${collectorNumber},${rarity},${language},${quantity},${condition},${finish},${altered},${signed},${misprint},${priceUsd},${priceEur},${priceUsdFoil},${priceEurFoil},${priceUsdEtched},${priceEurEtched},${scryfallId},${containerType},${containerName},${status}`);
       }
     }
 
@@ -107,18 +137,86 @@ export class CSVService {
     for (const wishlistCard of wishlist) {
       const card = wishlistCard.card;
       const name = `"${card.name}"`;
-      const quantity = wishlistCard.quantity;
-      const set = card.set_name || '';
+      const setCode = card.set_name ? this.getSetCode(card.set_name) : '';
+      const setName = `"${card.set_name || ''}"`;
       const collectorNumber = card.collector_number || '';
-      const cmc = card.cmc || 0;
-      const type = `"${card.type_line}"`;
-      const colors = card.colors.join('') || 'Colorless';
+      const rarity = card.rarity || 'unknown';
+      const language = 'en';
+      const quantity = wishlistCard.quantity;
+      const condition = 'NM';
+      const finish = 'nonfoil';
+      const altered = 'false';
+      const signed = 'false';
+      const misprint = 'false';
+      const priceUsd = card.prices?.usd || '0';
+      const priceEur = '0';
+      const priceUsdFoil = card.prices?.usd_foil || '0';
+      const priceEurFoil = '0';
+      const priceUsdEtched = '0';
+      const priceEurEtched = '0';
+      const scryfallId = card.id || '';
+      const containerType = 'wishlist';
+      const containerName = 'Wishlist';
       const status = 'Wishlist';
       
-      lines.push(`${name},${quantity},${set},${collectorNumber},${cmc},${type},${colors},${status}`);
+      lines.push(`${name},${setCode},${setName},${collectorNumber},${rarity},${language},${quantity},${condition},${finish},${altered},${signed},${misprint},${priceUsd},${priceEur},${priceUsdFoil},${priceEurFoil},${priceUsdEtched},${priceEurEtched},${scryfallId},${containerType},${containerName},${status}`);
     }
 
     return lines.join('\n');
+  }
+
+  private static getSetCode(setName: string): string {
+    // Common set code mappings - this is a simplified version
+    // In production, you'd want a full mapping or fetch from Scryfall
+    const setCodeMap: { [key: string]: string } = {
+      'Adventures in the Forgotten Realms': 'afr',
+      'The Brothers\' War': 'bro',
+      'Commander 2013': 'c13',
+      'Commander 2019': 'c19',
+      'Champions of Kamigawa': 'chk',
+      'Commander Anthology': 'cma',
+      'Dominaria United': 'dmu',
+      'Duskmourn: House of Horror': 'dsk',
+      'Lorwyn Eclipsed': 'ecl',
+      'Guilds of Ravnica': 'grn',
+      'Hour of Devastation': 'hou',
+      'Iconic Masters': 'ima',
+      'Innistrad Remastered': 'inr',
+      'Innistrad: Midnight Hunt': 'mid',
+      'Murders at Karlov Manor': 'mkm',
+      'Ravnica: City of Guilds': 'rav',
+      'Ravnica Allegiance': 'rna',
+      'Rise of the Eldrazi': 'roe',
+      'Return to Ravnica': 'rtr',
+      'Shadowmoor': 'shm',
+      'Marvel\'s Spider-Man': 'spm',
+      'Strixhaven: School of Mages': 'stx',
+      'Theros Beyond Death': 'thb',
+      'Avatar: The Last Airbender': 'tla',
+      'Time Spiral': 'tsp',
+      'Wilds of Eldraine': 'woe',
+      'Ixalan': 'xln'
+    };
+
+    // Try exact match first
+    if (setCodeMap[setName]) {
+      return setCodeMap[setName];
+    }
+
+    // Try case-insensitive match
+    const lowerName = setName.toLowerCase();
+    for (const [key, code] of Object.entries(setCodeMap)) {
+      if (key.toLowerCase() === lowerName) {
+        return code;
+      }
+    }
+
+    // Fallback: generate a short code from the name
+    return setName
+      .split(' ')
+      .map(word => word.substring(0, 3).toLowerCase())
+      .join('')
+      .substring(0, 3);
   }
 
   static exportBulkToCSV(cards: BulkCard[]): string {

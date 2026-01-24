@@ -550,6 +550,23 @@ body {
   background: var(--bg-tertiary);
 }
 
+.card-detail-back {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  margin-right: 1rem;
+}
+
+.card-detail-back:hover {
+  background: var(--border);
+  border-color: var(--accent);
+}
+
 .card-detail-content {
   padding: 1.5rem;
 }
