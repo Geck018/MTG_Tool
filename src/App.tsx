@@ -11,7 +11,7 @@ import './App.css';
 
 function App() {
   const { deck, addCard, removeCard, updateQuantity, moveCard, clearDeck, setDeckName } = useDeck();
-  const [activeTab, setActiveTab] = useState<'build' | 'bulk' | 'import' | 'validate' | 'keywords'>('build');
+  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'import' | 'validate' | 'keywords'>('search');
 
   return (
     <div className="app">
@@ -30,6 +30,12 @@ function App() {
       </header>
 
       <nav className="tab-nav">
+        <button
+          className={activeTab === 'search' ? 'active' : ''}
+          onClick={() => setActiveTab('search')}
+        >
+          Search Cards
+        </button>
         <button
           className={activeTab === 'build' ? 'active' : ''}
           onClick={() => setActiveTab('build')}
@@ -63,15 +69,22 @@ function App() {
       </nav>
 
       <main className="app-main">
+        {activeTab === 'search' && (
+          <div className="search-view">
+            <CardSearch 
+              onCardSelect={() => {
+                // In search mode, clicking shows details instead
+              }} 
+              deckCards={[...deck.cards, ...deck.sideboard].map(dc => dc.card)}
+              showAddButton={true}
+              onAddToDeck={(card) => addCard(card)}
+            />
+          </div>
+        )}
+
         {activeTab === 'build' && (
           <div className="build-view">
-            <div className="search-panel">
-              <CardSearch 
-                onCardSelect={(card) => addCard(card)} 
-                deckCards={[...deck.cards, ...deck.sideboard].map(dc => dc.card)}
-              />
-            </div>
-            <div className="deck-panel">
+            <div className="deck-panel-full">
               <DeckList
                 deck={deck}
                 onRemove={removeCard}

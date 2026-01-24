@@ -114,15 +114,28 @@ body {
 }
 
 .build-view {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
+  display: flex;
+  flex-direction: column;
   height: calc(100vh - 200px);
+}
+
+.search-view {
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.deck-panel-full {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  overflow-y: auto;
+  max-height: calc(100vh - 200px);
 }
 
 @media (max-width: 1024px) {
   .build-view {
-    grid-template-columns: 1fr;
     height: auto;
   }
 }

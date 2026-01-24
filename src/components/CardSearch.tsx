@@ -6,9 +6,11 @@ import { CardDetail } from './CardDetail';
 interface CardSearchProps {
   onCardSelect: (card: Card) => void;
   deckCards?: Card[];
+  showAddButton?: boolean;
+  onAddToDeck?: (card: Card) => void;
 }
 
-export function CardSearch({ onCardSelect, deckCards = [] }: CardSearchProps) {
+export function CardSearch({ onCardSelect, deckCards = [], showAddButton = false, onAddToDeck }: CardSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,10 +43,15 @@ export function CardSearch({ onCardSelect, deckCards = [] }: CardSearchProps) {
   }, [query]);
 
   const handleCardClick = (card: Card) => {
-    setSelectedCard(card);
-    onCardSelect(card);
-    setQuery('');
-    setResults([]);
+    // In search mode, show details instead of adding
+    if (showAddButton) {
+      handleCardDetail(card);
+    } else {
+      setSelectedCard(card);
+      onCardSelect(card);
+      setQuery('');
+      setResults([]);
+    }
   };
 
   const handleCardDetail = (card: Card) => {
@@ -86,13 +93,30 @@ export function CardSearch({ onCardSelect, deckCards = [] }: CardSearchProps) {
                   </div>
                 )}
               </div>
-              <button
-                className="btn btn-secondary btn-small"
-                onClick={() => handleCardDetail(card)}
-                style={{ marginTop: '0.5rem' }}
-              >
-                View Details
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <button
+                  className="btn btn-secondary btn-small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCardDetail(card);
+                  }}
+                >
+                  View Details
+                </button>
+                {showAddButton && onAddToDeck && (
+                  <button
+                    className="btn btn-small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddToDeck(card);
+                      setQuery('');
+                      setResults([]);
+                    }}
+                  >
+                    Add to Deck
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -114,7 +138,7 @@ export function CardSearch({ onCardSelect, deckCards = [] }: CardSearchProps) {
         <CardDetail
           card={detailCard}
           deckCards={deckCards}
-          onAddToDeck={onCardSelect}
+          onAddToDeck={showAddButton && onAddToDeck ? onAddToDeck : undefined}
           onClose={() => setDetailCard(null)}
         />
       )}

@@ -206,7 +206,10 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
 
           {onAddToDeck && (
             <div className="card-detail-actions">
-              <button className="btn" onClick={() => onAddToDeck(card)}>
+              <button className="btn" onClick={() => {
+                onAddToDeck(card);
+                if (onClose) onClose();
+              }}>
                 Add to Deck
               </button>
             </div>
