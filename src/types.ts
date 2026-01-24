@@ -36,6 +36,7 @@ export interface Deck {
   name: string;
   cards: DeckCard[];
   sideboard: DeckCard[];
+  wishlist: DeckCard[];
 }
 
 export interface BulkCard {

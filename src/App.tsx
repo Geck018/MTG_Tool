@@ -10,7 +10,7 @@ import { KeywordAnalyzer } from './components/KeywordAnalyzer';
 import './App.css';
 
 function App() {
-  const { deck, addCard, removeCard, updateQuantity, moveCard, clearDeck, setDeckName } = useDeck();
+  const { deck, addCard, removeCard, updateQuantity, moveCard, toggleWishlist, removeFromWishlist, updateWishlistQuantity, clearDeck, setDeckName } = useDeck();
   const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'import' | 'validate' | 'keywords'>('search');
 
   return (
@@ -76,8 +76,17 @@ function App() {
                 // In search mode, clicking shows details instead
               }} 
               deckCards={[...deck.cards, ...deck.sideboard].map(dc => dc.card)}
+              wishlistCards={deck.wishlist.map(dc => dc.card)}
               showAddButton={true}
               onAddToDeck={(card) => addCard(card)}
+              onAddToWishlist={(card) => {
+                const inWishlist = deck.wishlist.some(wc => wc.card.id === card.id);
+                if (inWishlist) {
+                  removeFromWishlist(card.id);
+                } else {
+                  toggleWishlist(card, 1);
+                }
+              }}
             />
           </div>
         )}
@@ -90,6 +99,15 @@ function App() {
                 onRemove={removeCard}
                 onUpdateQuantity={updateQuantity}
                 onMove={moveCard}
+                onToggleWishlist={(cardId, isSideboard) => {
+                  const source = isSideboard ? deck.sideboard : deck.cards;
+                  const card = source.find(dc => dc.card.id === cardId);
+                  if (card) {
+                    toggleWishlist(card.card, card.quantity);
+                  }
+                }}
+                onRemoveFromWishlist={removeFromWishlist}
+                onUpdateWishlistQuantity={updateWishlistQuantity}
                 onClear={clearDeck}
               />
             </div>

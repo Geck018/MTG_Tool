@@ -3,7 +3,7 @@ import type { Deck, Card } from '../types';
 
 export function useDeck(initialDeck?: Deck) {
   const [deck, setDeck] = useState<Deck>(
-    initialDeck || { name: 'New Deck', cards: [], sideboard: [] }
+    initialDeck || { name: 'New Deck', cards: [], sideboard: [], wishlist: [] }
   );
 
   const addCard = useCallback((card: Card, quantity: number = 1, isSideboard: boolean = false) => {
@@ -85,8 +85,51 @@ export function useDeck(initialDeck?: Deck) {
     });
   }, []);
 
+  const toggleWishlist = useCallback((card: Card, quantity: number = 1) => {
+    setDeck(prev => {
+      const existingWishlist = prev.wishlist.findIndex(dc => dc.card.id === card.id);
+      
+      if (existingWishlist >= 0) {
+        // Remove from wishlist
+        return {
+          ...prev,
+          wishlist: prev.wishlist.filter(dc => dc.card.id !== card.id)
+        };
+      } else {
+        // Add to wishlist
+        const newWishlist = [...prev.wishlist];
+        newWishlist.push({ card, quantity });
+        return {
+          ...prev,
+          wishlist: newWishlist
+        };
+      }
+    });
+  }, []);
+
+  const removeFromWishlist = useCallback((cardId: string) => {
+    setDeck(prev => ({
+      ...prev,
+      wishlist: prev.wishlist.filter(dc => dc.card.id !== cardId)
+    }));
+  }, []);
+
+  const updateWishlistQuantity = useCallback((cardId: string, quantity: number) => {
+    if (quantity <= 0) {
+      removeFromWishlist(cardId);
+      return;
+    }
+
+    setDeck(prev => ({
+      ...prev,
+      wishlist: prev.wishlist.map(dc =>
+        dc.card.id === cardId ? { ...dc, quantity } : dc
+      )
+    }));
+  }, [removeFromWishlist]);
+
   const clearDeck = useCallback(() => {
-    setDeck({ name: 'New Deck', cards: [], sideboard: [] });
+    setDeck({ name: 'New Deck', cards: [], sideboard: [], wishlist: [] });
   }, []);
 
   const setDeckName = useCallback((name: string) => {
@@ -99,6 +142,9 @@ export function useDeck(initialDeck?: Deck) {
     removeCard,
     updateQuantity,
     moveCard,
+    toggleWishlist,
+    removeFromWishlist,
+    updateWishlistQuantity,
     clearDeck,
     setDeckName
   };

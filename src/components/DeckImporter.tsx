@@ -93,7 +93,8 @@ export function DeckImporter({ onDeckImported }: DeckImporterProps) {
       const importedDeck: Deck = {
         name: 'Imported Deck',
         cards: deckCards,
-        sideboard: sideboardCards
+        sideboard: sideboardCards,
+        wishlist: []
       };
 
       setMessage({

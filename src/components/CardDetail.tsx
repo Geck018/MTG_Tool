@@ -9,10 +9,12 @@ interface CardDetailProps {
   card: Card;
   deckCards?: Card[];
   onAddToDeck?: (card: Card) => void;
+  onAddToWishlist?: (card: Card) => void;
+  isWishlisted?: boolean;
   onClose?: () => void;
 }
 
-export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardDetailProps) {
+export function CardDetail({ card, deckCards = [], onAddToDeck, onAddToWishlist, isWishlisted = false, onClose }: CardDetailProps) {
   const [rulings, setRulings] = useState<CardRuling[]>([]);
   const [combos, setCombos] = useState<CardCombo[]>([]);
   const [knownCombos, setKnownCombos] = useState<CardCombo[]>([]);
@@ -300,14 +302,27 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
             </div>
           </div>
 
-          {onAddToDeck && (
+          {(onAddToDeck || onAddToWishlist) && (
             <div className="card-detail-actions">
-              <button className="btn" onClick={() => {
-                onAddToDeck(card);
-                if (onClose) onClose();
-              }}>
-                Add to Deck
-              </button>
+              {onAddToDeck && (
+                <button className="btn" onClick={() => {
+                  onAddToDeck(card);
+                  if (onClose) onClose();
+                }}>
+                  Add to Deck
+                </button>
+              )}
+              {onAddToWishlist && (
+                <button 
+                  className={`btn ${isWishlisted ? 'btn-wishlist-active' : 'btn-secondary'}`}
+                  onClick={() => {
+                    onAddToWishlist(card);
+                    if (onClose) onClose();
+                  }}
+                >
+                  {isWishlisted ? '⭐ Remove from Wishlist' : '☆ Add to Wishlist'}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -318,6 +333,8 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
           card={comboCardDetail}
           deckCards={deckCards}
           onAddToDeck={onAddToDeck}
+          onAddToWishlist={onAddToWishlist}
+          isWishlisted={deckCards.some(dc => dc.id === comboCardDetail.id)}
           onClose={() => setComboCardDetail(null)}
         />
       )}

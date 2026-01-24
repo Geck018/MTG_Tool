@@ -82,6 +82,45 @@ export class CSVService {
     return lines.join('\n');
   }
 
+  static exportToCSVWithWishlist(allCards: DeckCard[], wishlist: DeckCard[]): string {
+    const wishlistCardIds = new Set(wishlist.map(wc => wc.card.id));
+    const lines = ['Name,Quantity,Set,Collector Number,CMC,Type,Colors,Status'];
+    
+    // Add deck cards (not in wishlist)
+    for (const deckCard of allCards) {
+      if (!wishlistCardIds.has(deckCard.card.id)) {
+        const card = deckCard.card;
+        const name = `"${card.name}"`;
+        const quantity = deckCard.quantity;
+        const set = card.set_name || '';
+        const collectorNumber = card.collector_number || '';
+        const cmc = card.cmc || 0;
+        const type = `"${card.type_line}"`;
+        const colors = card.colors.join('') || 'Colorless';
+        const status = 'In Deck';
+        
+        lines.push(`${name},${quantity},${set},${collectorNumber},${cmc},${type},${colors},${status}`);
+      }
+    }
+
+    // Add wishlist cards
+    for (const wishlistCard of wishlist) {
+      const card = wishlistCard.card;
+      const name = `"${card.name}"`;
+      const quantity = wishlistCard.quantity;
+      const set = card.set_name || '';
+      const collectorNumber = card.collector_number || '';
+      const cmc = card.cmc || 0;
+      const type = `"${card.type_line}"`;
+      const colors = card.colors.join('') || 'Colorless';
+      const status = 'Wishlist';
+      
+      lines.push(`${name},${quantity},${set},${collectorNumber},${cmc},${type},${colors},${status}`);
+    }
+
+    return lines.join('\n');
+  }
+
   static exportBulkToCSV(cards: BulkCard[]): string {
     const lines = ['Name,Quantity,Set,Collector Number'];
     

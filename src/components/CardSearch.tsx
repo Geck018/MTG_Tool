@@ -6,11 +6,13 @@ import { CardDetail } from './CardDetail';
 interface CardSearchProps {
   onCardSelect: (card: Card) => void;
   deckCards?: Card[];
+  wishlistCards?: Card[];
   showAddButton?: boolean;
   onAddToDeck?: (card: Card) => void;
+  onAddToWishlist?: (card: Card) => void;
 }
 
-export function CardSearch({ onCardSelect, deckCards = [], showAddButton = false, onAddToDeck }: CardSearchProps) {
+export function CardSearch({ onCardSelect, deckCards = [], wishlistCards = [], showAddButton = false, onAddToDeck, onAddToWishlist }: CardSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
@@ -93,7 +95,7 @@ export function CardSearch({ onCardSelect, deckCards = [], showAddButton = false
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
                 <button
                   className="btn btn-secondary btn-small"
                   onClick={(e) => {
@@ -114,6 +116,18 @@ export function CardSearch({ onCardSelect, deckCards = [], showAddButton = false
                     }}
                   >
                     Add to Deck
+                  </button>
+                )}
+                {showAddButton && onAddToWishlist && (
+                  <button
+                    className={`btn btn-small ${wishlistCards.some(wc => wc.id === card.id) ? 'btn-wishlist-active' : 'btn-secondary'}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddToWishlist(card);
+                    }}
+                    title={wishlistCards.some(wc => wc.id === card.id) ? 'Remove from wishlist' : 'Add to wishlist'}
+                  >
+                    {wishlistCards.some(wc => wc.id === card.id) ? '⭐' : '☆'}
                   </button>
                 )}
               </div>
@@ -139,6 +153,8 @@ export function CardSearch({ onCardSelect, deckCards = [], showAddButton = false
           card={detailCard}
           deckCards={deckCards}
           onAddToDeck={showAddButton && onAddToDeck ? onAddToDeck : undefined}
+          onAddToWishlist={showAddButton && onAddToWishlist ? onAddToWishlist : undefined}
+          isWishlisted={wishlistCards.some(wc => wc.id === detailCard.id)}
           onClose={() => setDetailCard(null)}
         />
       )}

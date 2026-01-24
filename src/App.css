@@ -761,6 +761,43 @@ body {
   color: var(--text-secondary);
 }
 
+.wishlist-badge {
+  margin-left: 0.5rem;
+  color: var(--warning);
+  font-size: 0.9rem;
+}
+
+.missing-badge {
+  margin-left: 0.5rem;
+  color: var(--error);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.have-badge {
+  margin-left: 0.5rem;
+  color: var(--success);
+  font-size: 0.9rem;
+}
+
+.deck-card-item.wishlisted {
+  border-left-color: var(--warning);
+  background: rgba(251, 191, 36, 0.05);
+}
+
+.deck-card-item.missing-from-collection {
+  border-left-color: var(--error);
+}
+
+.btn-wishlist-active {
+  background: var(--warning) !important;
+  color: white !important;
+}
+
+.btn-wishlist-active:hover {
+  background: #f59e0b !important;
+}
+
 .card-detail-actions {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
