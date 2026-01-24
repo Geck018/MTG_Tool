@@ -16,7 +16,33 @@ For **Cloudflare Workers** (if you need serverless functions):
 
 ## Cloudflare Pages Deployment
 
-### Method 1: Via Cloudflare Dashboard (Easiest)
+### Method 1: Connect GitHub Repository (Recommended - Automatic Deploys)
+
+1. **First, push your code to GitHub** (see GIT_SETUP.md if needed)
+
+2. **Go to Cloudflare Dashboard:**
+   - Visit https://dash.cloudflare.com
+   - Click "Workers & Pages" → "Pages"
+   - Click "Create a project"
+   - Choose "Connect to Git"
+   - Select your GitHub account and repository: `Geck018/MTG_Tool`
+   - Click "Begin setup"
+
+3. **Configure build settings:**
+   - **Project name:** `mtg-deckbuilder` (or your preferred name)
+   - **Production branch:** `main`
+   - **Build command:** `npm run build`
+   - **Build output directory:** `dist`
+   - **Root directory:** `/` (leave empty)
+   - **Node version:** `18` or higher
+
+4. **Click "Save and Deploy"**
+   - Cloudflare will automatically build and deploy your app
+   - Every push to `main` will trigger a new deployment
+
+5. **Your app will be live at:** `https://mtg-deckbuilder.pages.dev` (or your custom domain)
+
+### Method 2: Manual Upload (One-time)
 
 1. **Build your app locally:**
    ```bash
@@ -29,13 +55,6 @@ For **Cloudflare Workers** (if you need serverless functions):
    - Click "Create a project"
    - Choose "Upload assets"
    - Upload the `dist` folder
-
-3. **Or connect Git:**
-   - Connect your GitHub/GitLab repository
-   - Build settings:
-     - **Build command:** `npm run build`
-     - **Build output directory:** `dist`
-     - **Root directory:** `/` (leave empty)
 
 ### Method 2: Via Wrangler CLI
 
