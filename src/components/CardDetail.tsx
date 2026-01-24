@@ -3,6 +3,7 @@ import type { Card, CardRuling, CardCombo } from '../types';
 import { ScryfallService } from '../services/scryfall';
 import { ComboAnalyzer } from '../services/combos';
 import { KeywordAnalyzer } from '../services/keywords';
+import { KnownComboService } from '../services/knownCombos';
 
 interface CardDetailProps {
   card: Card;
@@ -14,6 +15,7 @@ interface CardDetailProps {
 export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardDetailProps) {
   const [rulings, setRulings] = useState<CardRuling[]>([]);
   const [combos, setCombos] = useState<CardCombo[]>([]);
+  const [knownCombos, setKnownCombos] = useState<CardCombo[]>([]);
   const [loadingRulings, setLoadingRulings] = useState(false);
   const [loadingCombos, setLoadingCombos] = useState(false);
   const [showRulings, setShowRulings] = useState(false);
@@ -26,10 +28,16 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
   }, [showRulings]);
 
   useEffect(() => {
-    if (showCombos && combos.length === 0) {
+    if (showCombos && combos.length === 0 && knownCombos.length === 0) {
       loadCombos();
+      loadKnownCombos();
     }
   }, [showCombos]);
+
+  useEffect(() => {
+    // Load known combos immediately when card changes
+    loadKnownCombos();
+  }, [card.name]);
 
   const loadRulings = async () => {
     setLoadingRulings(true);
@@ -40,6 +48,27 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
       console.error('Error loading rulings:', error);
     } finally {
       setLoadingRulings(false);
+    }
+  };
+
+  const loadKnownCombos = () => {
+    try {
+      const allKnownCombos = KnownComboService.getAllCombosForCard(card.name);
+      const convertedCombos: CardCombo[] = [];
+      
+      for (const { combo, type } of allKnownCombos) {
+        const cardCombos = KnownComboService.convertToCardCombo(combo, type);
+        convertedCombos.push(...cardCombos);
+      }
+      
+      // Remove duplicates
+      const uniqueCombos = convertedCombos.filter((combo, index, self) =>
+        index === self.findIndex(c => c.cardName === combo.cardName)
+      );
+      
+      setKnownCombos(uniqueCombos);
+    } catch (error) {
+      console.error('Error loading known combos:', error);
     }
   };
 
@@ -177,27 +206,57 @@ export function CardDetail({ card, deckCards = [], onAddToDeck, onClose }: CardD
                 className="card-detail-toggle"
                 onClick={() => setShowCombos(!showCombos)}
               >
-                <span>⚡ Combos & Synergies ({combos.length})</span>
+                <span>⚡ Combos & Synergies ({knownCombos.length + combos.length})</span>
                 <span>{showCombos ? '▼' : '▶'}</span>
               </button>
               {showCombos && (
                 <div className="card-detail-section-content">
-                  {loadingCombos ? (
-                    <div className="loading">Analyzing combos...</div>
-                  ) : combos.length > 0 ? (
-                    <div className="combos-list">
-                      {combos.map((combo, i) => (
-                        <div key={i} className={`combo-item combo-${combo.synergy}`}>
-                          <div className="combo-card">{combo.cardName}</div>
-                          <div className="combo-reason">{combo.reason}</div>
-                          <div className={`combo-badge combo-${combo.synergy}`}>
-                            {combo.synergy.toUpperCase()}
+                  {knownCombos.length > 0 && (
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <h4 style={{ color: 'var(--accent)', marginBottom: '0.75rem', fontSize: '1rem' }}>
+                        📚 Known Popular Combos
+                      </h4>
+                      <div className="combos-list">
+                        {knownCombos.map((combo, i) => (
+                          <div key={`known-${i}`} className={`combo-item combo-${combo.synergy}`}>
+                            <div className="combo-card">{combo.cardName}</div>
+                            <div className="combo-reason">{combo.reason}</div>
+                            <div className={`combo-badge combo-${combo.synergy}`}>
+                              {combo.synergy.toUpperCase()}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {loadingCombos ? (
+                    <div className="loading">Analyzing deck synergies...</div>
+                  ) : combos.length > 0 ? (
+                    <div>
+                      <h4 style={{ color: 'var(--accent)', marginBottom: '0.75rem', fontSize: '1rem' }}>
+                        🎴 Synergies in Your Deck
+                      </h4>
+                      <div className="combos-list">
+                        {combos.map((combo, i) => (
+                          <div key={`deck-${i}`} className={`combo-item combo-${combo.synergy}`}>
+                            <div className="combo-card">{combo.cardName}</div>
+                            <div className="combo-reason">{combo.reason}</div>
+                            <div className={`combo-badge combo-${combo.synergy}`}>
+                              {combo.synergy.toUpperCase()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : deckCards.length > 0 ? (
+                    <div className="empty-state" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      No synergies found in your current deck. Check out the known combos above for ideas!
                     </div>
                   ) : (
-                    <div className="empty-state">No combos found. Try adding cards to your deck first.</div>
+                    <div className="empty-state" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      Add cards to your deck to see synergies, or check out the known combos above for ideas!
+                    </div>
                   )}
                 </div>
               )}
