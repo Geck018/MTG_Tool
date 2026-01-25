@@ -1,5 +1,6 @@
 import type { Deck, DeckCard } from '../types';
 import { CollectionService } from '../utils/collection';
+import { ManaCurveChart } from './ManaCurveChart';
 
 interface DeckListProps {
   deck: Deck;
@@ -172,6 +173,12 @@ export function DeckList({
 
   return (
     <div className="deck-panel">
+      {mainDeckCount > 0 && (
+        <div className="deck-section">
+          <ManaCurveChart cards={deck.cards} title="Main Deck Mana Curve" />
+        </div>
+      )}
+      
       <div className="deck-section">
         <div className="deck-section-title">
           <span>Main Deck</span>

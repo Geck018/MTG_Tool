@@ -48,4 +48,32 @@ export class CollectionService {
 
     return missing;
   }
+
+  static removeCard(cardName: string, quantity: number = 1): boolean {
+    try {
+      const collection = this.getBulkCollection();
+      const cardIndex = collection.findIndex(
+        bc => bc.name.toLowerCase() === cardName.toLowerCase()
+      );
+
+      if (cardIndex === -1) {
+        return false; // Card not in collection
+      }
+
+      const card = collection[cardIndex];
+      if (card.quantity <= quantity) {
+        // Remove the card entirely
+        collection.splice(cardIndex, 1);
+      } else {
+        // Reduce quantity
+        card.quantity -= quantity;
+      }
+
+      localStorage.setItem('mtg_bulk_collection', JSON.stringify(collection));
+      return true;
+    } catch (error) {
+      console.error('Error removing card from collection:', error);
+      return false;
+    }
+  }
 }

@@ -1,11 +1,13 @@
 import type { Deck } from '../types';
 import { CSVService } from '../utils/csv';
+import { CollectionService } from '../utils/collection';
 
 interface ExportButtonProps {
   deck: Deck;
+  onCollectionUpdated?: () => void;
 }
 
-export function ExportButton({ deck }: ExportButtonProps) {
+export function ExportButton({ deck, onCollectionUpdated }: ExportButtonProps) {
   const handleExport = () => {
     const allCards = [...deck.cards, ...deck.sideboard, ...deck.wishlist];
     
@@ -24,6 +26,26 @@ export function ExportButton({ deck }: ExportButtonProps) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
+    // Remove exported cards (main deck + sideboard only, not wishlist) from collection
+    const cardsToRemove = [...deck.cards, ...deck.sideboard];
+    if (cardsToRemove.length > 0) {
+      let removedCount = 0;
+      for (const deckCard of cardsToRemove) {
+        const removed = CollectionService.removeCard(deckCard.card.name, deckCard.quantity);
+        if (removed) {
+          removedCount += deckCard.quantity;
+        }
+      }
+      
+      if (removedCount > 0) {
+        // Notify parent component to refresh collection view if needed
+        if (onCollectionUpdated) {
+          onCollectionUpdated();
+        }
+        console.log(`Removed ${removedCount} cards from collection after export`);
+      }
+    }
   };
 
   const mainDeckCount = deck.cards.reduce((sum, dc) => sum + dc.quantity, 0);

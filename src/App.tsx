@@ -22,6 +22,7 @@ function App() {
   const { deck, addCard, removeCard, updateQuantity, moveCard, toggleWishlist, removeFromWishlist, updateWishlistQuantity, clearDeck, setDeckName } = useDeck();
   const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'generate' | 'commander' | 'import' | 'validate' | 'keywords'>('search');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [collectionUpdateKey, setCollectionUpdateKey] = useState(0);
 
   // Handle URL routing for card details
   useEffect(() => {
@@ -68,7 +69,13 @@ function App() {
             placeholder="Deck Name"
             className="deck-name-input"
           />
-          <ExportButton deck={deck} />
+          <ExportButton 
+            deck={deck} 
+            onCollectionUpdated={() => {
+              // Trigger collection refresh by updating key
+              setCollectionUpdateKey(prev => prev + 1);
+            }} 
+          />
         </div>
       </header>
 
@@ -202,7 +209,7 @@ function App() {
         )}
 
         {activeTab === 'collection' && (
-          <CollectionViewer />
+          <CollectionViewer key={collectionUpdateKey} />
         )}
 
         {activeTab === 'generate' && (
