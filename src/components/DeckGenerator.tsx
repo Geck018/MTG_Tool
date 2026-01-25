@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { GeneratedDeck } from '../services/deckGenerator';
-import { DeckGenerator as DeckGeneratorService, MECHANICS, type MechanicType } from '../services/deckGenerator';
+import { DeckGenerator as DeckGeneratorService, MECHANICS, FORMATS, type MechanicType, type FormatType } from '../services/deckGenerator';
 import { CollectionService } from '../utils/collection';
 import { CardDetail } from './CardDetail';
 import type { Card } from '../types';
@@ -11,6 +11,7 @@ interface DeckGeneratorProps {
 
 export function DeckGenerator({ onDeckGenerated }: DeckGeneratorProps) {
   const [selectedMechanic, setSelectedMechanic] = useState<MechanicType | null>(null);
+  const [selectedFormat, setSelectedFormat] = useState<FormatType>('standard');
   const [generating, setGenerating] = useState(false);
   const [generatedDeck, setGeneratedDeck] = useState<GeneratedDeck | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,7 @@ export function DeckGenerator({ onDeckGenerated }: DeckGeneratorProps) {
     setGeneratedDeck(null);
 
     try {
-      const deck = await DeckGeneratorService.generateDeck(selectedMechanic);
+      const deck = await DeckGeneratorService.generateDeck(selectedMechanic, selectedFormat);
       
       if (!deck) {
         setError('Not enough cards in your collection matching this mechanic. Try importing more cards or selecting a different mechanic.');
@@ -70,6 +71,26 @@ export function DeckGenerator({ onDeckGenerated }: DeckGeneratorProps) {
         <h2 className="panel-title">Generate Deck from Collection</h2>
         <div className="collection-info">
           <span>{collection.length} cards in collection</span>
+        </div>
+      </div>
+
+      <div className="format-selection" style={{ marginBottom: '2rem' }}>
+        <h3>Select Format</h3>
+        <div className="format-buttons">
+          {FORMATS.map(format => (
+            <button
+              key={format.id}
+              className={`format-button ${selectedFormat === format.id ? 'selected' : ''}`}
+              onClick={() => setSelectedFormat(format.id)}
+              disabled={generating}
+            >
+              <div className="format-name">{format.name}</div>
+              <div className="format-details">
+                {format.deckSize} cards • Max {format.maxCopies} copies
+                {format.sideboardSize > 0 && ` • ${format.sideboardSize} sideboard`}
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 

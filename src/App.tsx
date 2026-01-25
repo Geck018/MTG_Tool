@@ -11,7 +11,7 @@ import { CollectionViewer } from './components/CollectionViewer';
 import { CardDetail } from './components/CardDetail';
 import { DeckGenerator } from './components/DeckGenerator';
 import { ScryfallService } from './services/scryfall';
-import { MECHANICS } from './services/deckGenerator';
+import { MECHANICS, FORMATS } from './services/deckGenerator';
 import type { Card } from './types';
 import type { GeneratedDeck } from './services/deckGenerator';
 import './App.css';
@@ -209,7 +209,9 @@ function App() {
             generatedDeck.suggestedCards.forEach(suggestion => {
               toggleWishlist(suggestion.card, 1);
             });
-            setDeckName(`${MECHANICS.find(m => m.id === generatedDeck.mechanic)?.name || 'Generated'} Deck`);
+            const formatName = FORMATS.find(f => f.id === generatedDeck.format)?.name || '';
+            const mechanicName = MECHANICS.find(m => m.id === generatedDeck.mechanic)?.name || 'Generated';
+            setDeckName(`${mechanicName} ${formatName} Deck`);
             setActiveTab('build');
           }} />
         )}

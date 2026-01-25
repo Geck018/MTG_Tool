@@ -1431,3 +1431,57 @@ body {
   color: var(--text-secondary);
   flex-wrap: wrap;
 }
+
+/* Format Selection */
+.format-selection {
+  margin-bottom: 2rem;
+}
+
+.format-selection h3 {
+  margin-bottom: 1rem;
+  color: var(--accent);
+}
+
+.format-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.format-button {
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.format-button:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.format-button.selected {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.1);
+}
+
+.format-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.format-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
+.format-details {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}

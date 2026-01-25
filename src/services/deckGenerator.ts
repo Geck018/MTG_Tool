@@ -97,16 +97,36 @@ export const MECHANICS: MechanicDefinition[] = [
   }
 ];
 
+export type FormatType = 'standard' | 'modern' | 'pioneer' | 'legacy' | 'vintage' | 'commander';
+
+export interface FormatDefinition {
+  id: FormatType;
+  name: string;
+  deckSize: number;
+  maxCopies: number;
+  sideboardSize: number;
+}
+
+export const FORMATS: FormatDefinition[] = [
+  { id: 'standard', name: 'Standard', deckSize: 60, maxCopies: 4, sideboardSize: 15 },
+  { id: 'modern', name: 'Modern', deckSize: 60, maxCopies: 4, sideboardSize: 15 },
+  { id: 'pioneer', name: 'Pioneer', deckSize: 60, maxCopies: 4, sideboardSize: 15 },
+  { id: 'legacy', name: 'Legacy', deckSize: 60, maxCopies: 4, sideboardSize: 15 },
+  { id: 'vintage', name: 'Vintage', deckSize: 60, maxCopies: 4, sideboardSize: 15 },
+  { id: 'commander', name: 'Commander', deckSize: 100, maxCopies: 1, sideboardSize: 0 }
+];
+
 export interface GeneratedDeck {
   cards: DeckCard[];
   suggestedCards: Array<{ card: Card; reason: string; priority: 'high' | 'medium' | 'low' }>;
   mechanic: MechanicType;
+  format: FormatType;
   colorIdentity: string[];
   synergyScore: number;
 }
 
 export class DeckGenerator {
-  static async generateDeck(mechanic: MechanicType): Promise<GeneratedDeck | null> {
+  static async generateDeck(mechanic: MechanicType, format: FormatType = 'standard'): Promise<GeneratedDeck | null> {
     const collection = CollectionService.getBulkCollection();
     if (collection.length === 0) {
       return null;
@@ -132,7 +152,10 @@ export class DeckGenerator {
     }
 
     // Filter cards matching the mechanic
-    const matchingCards = this.filterCardsByMechanic(collectionCards, mechanicDef);
+    let matchingCards = this.filterCardsByMechanic(collectionCards, mechanicDef);
+    
+    // Filter by format legality
+    matchingCards = this.filterByFormat(matchingCards, format);
     
     if (matchingCards.length < 10) {
       return null; // Not enough cards for a deck
@@ -141,11 +164,12 @@ export class DeckGenerator {
     // Analyze synergies
     const synergies = await this.analyzeSynergies(matchingCards.map(m => m.card));
     
-    // Build deck (aim for 60 cards: ~24 lands, ~36 non-lands)
-    const deck = this.buildDeck(matchingCards, synergies, mechanicDef);
+    // Build deck based on format
+    const formatDef = FORMATS.find(f => f.id === format) || FORMATS[0];
+    const deck = this.buildDeck(matchingCards, synergies, mechanicDef, formatDef);
     
     // Find suggested cards to enhance the deck
-    const suggestedCards = await this.findSuggestedCards(deck.cards.map(dc => dc.card), mechanicDef);
+    const suggestedCards = await this.findSuggestedCards(deck.cards.map(dc => dc.card), mechanicDef, format);
     
     // Determine color identity
     const colorIdentity = this.getColorIdentity(deck.cards.map(dc => dc.card));
@@ -157,9 +181,22 @@ export class DeckGenerator {
       cards: deck.cards,
       suggestedCards,
       mechanic,
+      format,
       colorIdentity,
       synergyScore
     };
+  }
+
+  private static filterByFormat(
+    matchingCards: Array<{ bulkCard: BulkCard; card: Card; score: number }>,
+    format: FormatType
+  ): Array<{ bulkCard: BulkCard; card: Card; score: number }> {
+    return matchingCards.filter(({ card }) => {
+      const legalities = card.legalities || {};
+      const formatLegality = legalities[format.toLowerCase()];
+      // Include cards that are legal or not specified (assume legal if not in legalities)
+      return formatLegality === 'legal' || formatLegality === undefined || formatLegality === null;
+    });
   }
 
   private static filterCardsByMechanic(
@@ -243,15 +280,18 @@ export class DeckGenerator {
   private static buildDeck(
     matchingCards: Array<{ bulkCard: BulkCard; card: Card; score: number }>,
     synergies: Map<string, Array<{ card: Card; reason: string; level: 'high' | 'medium' | 'low' }>>,
-    _mechanic: MechanicDefinition
+    _mechanic: MechanicDefinition,
+    format: FormatDefinition
   ): { cards: DeckCard[] } {
     const deckCards: DeckCard[] = [];
     const usedCardIds = new Set<string>();
     const cardCounts = new Map<string, number>();
     
-    // Target: 36 non-land cards, 24 lands
-    const targetNonLands = 36;
-    const targetLands = 24;
+    // Calculate targets based on format
+    const isCommander = format.id === 'commander';
+    const targetNonLands = isCommander ? 64 : 36; // Commander: 64 non-lands + 36 lands = 100
+    const targetLands = isCommander ? 36 : 24;
+    const maxCopies = format.maxCopies;
 
     // Sort by score and synergy
     const sortedCards = [...matchingCards].sort((a, b) => {
@@ -267,7 +307,9 @@ export class DeckGenerator {
       if (card.type_line.toLowerCase().includes('land')) continue;
       if (usedCardIds.has(card.id)) continue;
 
-      const quantity = Math.min(bulkCard.quantity, 4); // Max 4 of a card
+      const isBasicLand = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'].includes(card.name);
+      const maxForCard = isBasicLand ? (isCommander ? 1 : 20) : maxCopies; // Basic lands: 1 in Commander, up to 20 in others
+      const quantity = Math.min(bulkCard.quantity, maxForCard);
       if (quantity > 0) {
         deckCards.push({ card, quantity });
         usedCardIds.add(card.id);
@@ -295,9 +337,13 @@ export class DeckGenerator {
       if (landName) {
         const bulkCard = matchingCards.find(m => m.bulkCard.name === landName);
         if (bulkCard && landCount < targetLands) {
-          const quantity = Math.min(bulkCard.bulkCard.quantity, 8); // Max 8 basics per color
-          deckCards.push({ card: bulkCard.card, quantity });
-          landCount += quantity;
+          const maxBasics = isCommander ? 1 : 8; // Commander: 1 of each basic, others: up to 8
+          const quantity = Math.min(bulkCard.bulkCard.quantity, maxBasics);
+          if (!usedCardIds.has(bulkCard.card.id)) {
+            deckCards.push({ card: bulkCard.card, quantity });
+            usedCardIds.add(bulkCard.card.id);
+            landCount += quantity;
+          }
         }
       }
     }
@@ -309,7 +355,7 @@ export class DeckGenerator {
       if (usedCardIds.has(card.id)) continue;
       if (basicLands.includes(card.name)) continue; // Already added
 
-      const quantity = Math.min(bulkCard.quantity, 4);
+      const quantity = Math.min(bulkCard.quantity, maxCopies);
       if (quantity > 0) {
         deckCards.push({ card, quantity });
         usedCardIds.add(card.id);
@@ -322,7 +368,8 @@ export class DeckGenerator {
 
   private static async findSuggestedCards(
     deckCards: Card[],
-    mechanic: MechanicDefinition
+    mechanic: MechanicDefinition,
+    format: FormatType = 'standard'
   ): Promise<Array<{ card: Card; reason: string; priority: 'high' | 'medium' | 'low' }>> {
     const suggestions: Array<{ card: Card; reason: string; priority: 'high' | 'medium' | 'low' }> = [];
     
@@ -339,7 +386,16 @@ export class DeckGenerator {
       try {
         const results = await ScryfallService.searchCard(query);
         const topResults = (results || [])
-          .filter(card => card && card.id && !deckCards.some(dc => dc && dc.id === card.id))
+          .filter(card => {
+            if (!card || !card.id) return false;
+            // Check format legality
+            const legalities = card.legalities || {};
+            const formatLegality = legalities[format.toLowerCase()];
+            const isLegal = formatLegality === 'legal' || formatLegality === undefined || formatLegality === null;
+            // Check not already in deck
+            const notInDeck = !deckCards.some(dc => dc && dc.id === card.id);
+            return isLegal && notInDeck;
+          })
           .slice(0, 5);
         
         for (const card of topResults) {
@@ -352,7 +408,7 @@ export class DeckGenerator {
           if (matchesMechanic) {
             suggestions.push({
               card,
-              reason: `Popular ${mechanic.name} card that synergizes with your deck`,
+              reason: `Popular ${mechanic.name} card that synergizes with your deck (${format})`,
               priority: card.rarity === 'mythic' || card.rarity === 'rare' ? 'high' : 'medium'
             });
           }
