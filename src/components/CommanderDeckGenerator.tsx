@@ -35,16 +35,16 @@ export function CommanderDeckGenerator({ onDeckGenerated }: CommanderDeckGenerat
     setLoadingCollection(true);
     const legendaryCards: Array<{ bulkCard: { name: string; set?: string }; card: Card }> = [];
 
+    // Use batch fetching for better performance
+    const cardNames = bulkCollection.map(bc => bc.name);
+    const cardMap = await ScryfallService.getCardsByName(cardNames, undefined, 20);
+
+    // Filter for legendary creatures
     for (const bulkCard of bulkCollection) {
-      try {
-        const card = await ScryfallService.getCardByName(bulkCard.name, bulkCard.set);
-        if (card && card.type_line.toLowerCase().includes('legendary') && 
-            card.type_line.toLowerCase().includes('creature')) {
-          legendaryCards.push({ bulkCard, card });
-        }
-        await new Promise(resolve => setTimeout(resolve, 50));
-      } catch (error) {
-        console.error(`Error loading ${bulkCard.name}:`, error);
+      const card = cardMap.get(bulkCard.name);
+      if (card && card.type_line.toLowerCase().includes('legendary') && 
+          card.type_line.toLowerCase().includes('creature')) {
+        legendaryCards.push({ bulkCard, card });
       }
     }
 

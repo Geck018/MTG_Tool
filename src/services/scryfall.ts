@@ -4,6 +4,42 @@ const SCRYFALL_API = 'https://api.scryfall.com';
 
 export class ScryfallService {
   private static cache = new Map<string, Card>();
+  private static localStorageCache = 'scryfall_card_cache';
+  private static cacheInitialized = false;
+
+  // Initialize cache from localStorage on first use
+  private static initCache() {
+    if (this.cacheInitialized) return;
+    try {
+      const cached = localStorage.getItem(this.localStorageCache);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        for (const [key, value] of Object.entries(parsed)) {
+          this.cache.set(key, value as Card);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading cache from localStorage:', error);
+    }
+    this.cacheInitialized = true;
+  }
+
+  // Save cache to localStorage periodically
+  private static saveCache() {
+    try {
+      const cacheObj: Record<string, Card> = {};
+      this.cache.forEach((value, key) => {
+        cacheObj[key] = value;
+      });
+      // Limit cache size to 5MB (roughly 5000 cards)
+      const cacheStr = JSON.stringify(cacheObj);
+      if (cacheStr.length < 5 * 1024 * 1024) {
+        localStorage.setItem(this.localStorageCache, cacheStr);
+      }
+    } catch (error) {
+      console.error('Error saving cache to localStorage:', error);
+    }
+  }
 
   static async searchCard(query: string): Promise<Card[]> {
     try {
@@ -28,6 +64,7 @@ export class ScryfallService {
   }
 
   static async getCardByName(name: string, set?: string): Promise<Card | null> {
+    this.initCache();
     const cacheKey = `${name}${set ? `:${set}` : ''}`;
     
     if (this.cache.has(cacheKey)) {
@@ -48,11 +85,60 @@ export class ScryfallService {
 
       const card = await response.json();
       this.cache.set(cacheKey, card);
+      // Save cache periodically (every 10 cards)
+      if (this.cache.size % 10 === 0) {
+        this.saveCache();
+      }
       return card;
     } catch (error) {
       console.error('Error fetching card:', error);
       return null;
     }
+  }
+
+  // Batch fetch multiple cards by name (parallel requests)
+  // Accepts either a single set for all cards, or a map of name->set for individual sets
+  static async getCardsByName(
+    names: string[], 
+    set?: string | Map<string, string>, 
+    batchSize: number = 20
+  ): Promise<Map<string, Card>> {
+    this.initCache();
+    const results = new Map<string, Card>();
+    const uncached: Array<{ name: string; set?: string }> = [];
+    const setMap = set instanceof Map ? set : undefined;
+    const defaultSet = set instanceof Map ? undefined : set;
+
+    // Check cache first
+    for (const name of names) {
+      const cardSet = setMap?.get(name) || defaultSet;
+      const cacheKey = `${name}${cardSet ? `:${cardSet}` : ''}`;
+      if (this.cache.has(cacheKey)) {
+        results.set(name, this.cache.get(cacheKey)!);
+      } else {
+        uncached.push({ name, set: cardSet });
+      }
+    }
+
+    // Fetch uncached cards in parallel batches
+    for (let i = 0; i < uncached.length; i += batchSize) {
+      const batch = uncached.slice(i, i + batchSize);
+      const promises = batch.map(({ name, set: cardSet }) => this.getCardByName(name, cardSet));
+      const batchResults = await Promise.all(promises);
+      
+      batchResults.forEach((card, index) => {
+        if (card) {
+          results.set(batch[index].name, card);
+        }
+      });
+
+      // Small delay between batches to respect rate limits
+      if (i + batchSize < uncached.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    return results;
   }
 
   static async getCardBySetAndNumber(set: string, number: string): Promise<Card | null> {

@@ -39,7 +39,7 @@ export function CollectionViewer() {
   };
 
   const loadCardDataBatch = async () => {
-    const cardsToLoad = collection.filter(c => !c.cardData && !c.loading).slice(0, 10);
+    const cardsToLoad = collection.filter(c => !c.cardData && !c.loading).slice(0, 20);
     if (cardsToLoad.length === 0) return;
     
     // Mark as loading
@@ -49,34 +49,28 @@ export function CollectionViewer() {
         : c
     ));
 
-    // Load in parallel with delay to respect rate limits
-    for (const bulkCard of cardsToLoad) {
-      try {
-        const card = await ScryfallService.getCardByName(bulkCard.name, bulkCard.set);
-        if (card) {
-          setCollection(prev => prev.map(c => 
-            c.name === bulkCard.name && c.set === bulkCard.set
-              ? { ...c, cardData: card, loading: false }
-              : c
-          ));
-        } else {
-          setCollection(prev => prev.map(c => 
-            c.name === bulkCard.name && c.set === bulkCard.set
-              ? { ...c, loading: false }
-              : c
-          ));
-        }
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
-        console.error('Error loading card:', error);
-        setCollection(prev => prev.map(c => 
-          c.name === bulkCard.name && c.set === bulkCard.set
-            ? { ...c, loading: false }
-            : c
-        ));
+    // Create a map of name->set for cards that have sets
+    const setMap = new Map<string, string>();
+    cardsToLoad.forEach(c => {
+      if (c.set) {
+        setMap.set(c.name, c.set);
       }
-    }
+    });
+
+    // Load in parallel batches for better performance
+    const cardNames = cardsToLoad.map(c => c.name);
+    const cardMap = await ScryfallService.getCardsByName(cardNames, setMap.size > 0 ? setMap : undefined, 20);
+
+    // Update collection with loaded cards
+    setCollection(prev => prev.map(c => {
+      const card = cardMap.get(c.name);
+      if (card && cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)) {
+        return { ...c, cardData: card, loading: false };
+      } else if (cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)) {
+        return { ...c, loading: false };
+      }
+      return c;
+    }));
   };
 
   const loadCardDetails = async (bulkCard: CollectionCard) => {
