@@ -213,18 +213,21 @@ export class DeckGenerator {
       const name = oracleTextLower(card.name);
 
       // Check for keyword matches
-      for (const keyword of mechanic.keywords) {
-        const keywordLower = keyword.toLowerCase();
-        if (text.includes(keywordLower) || name.includes(keywordLower)) {
-          score += 3;
+      if (mechanic.keywords && Array.isArray(mechanic.keywords)) {
+        for (const keyword of mechanic.keywords) {
+          if (!keyword) continue;
+          const keywordLower = keyword.toLowerCase();
+          if (text.includes(keywordLower) || name.includes(keywordLower)) {
+            score += 3;
+          }
         }
       }
 
       // Color preference bonus
-      if (mechanic.colorPreferences && mechanic.colorPreferences.length > 0) {
+      if (mechanic.colorPreferences && Array.isArray(mechanic.colorPreferences) && mechanic.colorPreferences.length > 0) {
         const cardColors = Array.isArray(card.color_identity) ? card.color_identity : 
                           (Array.isArray(card.colors) ? card.colors : []);
-        if (Array.isArray(cardColors) && cardColors.length > 0) {
+        if (Array.isArray(cardColors) && cardColors.length > 0 && Array.isArray(mechanic.colorPreferences)) {
           const hasPreferredColor = mechanic.colorPreferences.some(c => cardColors.includes(c));
           if (hasPreferredColor) {
             score += 2;
@@ -258,19 +261,34 @@ export class DeckGenerator {
   private static async analyzeSynergies(cards: Card[]): Promise<Map<string, Array<{ card: Card; reason: string; level: 'high' | 'medium' | 'low' }>>> {
     const synergies = new Map<string, Array<{ card: Card; reason: string; level: 'high' | 'medium' | 'low' }>>();
 
+    if (!cards || !Array.isArray(cards) || cards.length === 0) {
+      return synergies;
+    }
+
     for (const card of cards) {
-      const cardSynergies = await ComboAnalyzer.findCombos(card, cards);
-      const synergyList = cardSynergies.map(combo => {
-        const comboCard = cards.find(c => c.name === combo.cardName);
-        return comboCard ? {
-          card: comboCard,
-          reason: combo.reason,
-          level: combo.synergy
-        } : null;
-      }).filter(Boolean) as Array<{ card: Card; reason: string; level: 'high' | 'medium' | 'low' }>;
+      if (!card || !card.id) continue;
       
-      if (synergyList.length > 0) {
-        synergies.set(card.id, synergyList);
+      try {
+        const cardSynergies = await ComboAnalyzer.findCombos(card, cards);
+        if (!cardSynergies || !Array.isArray(cardSynergies)) continue;
+        
+        const synergyList = cardSynergies
+          .filter(combo => combo && combo.cardName)
+          .map(combo => {
+            const comboCard = cards.find(c => c && c.name === combo.cardName);
+            return comboCard ? {
+              card: comboCard,
+              reason: combo.reason || 'Synergy',
+              level: combo.synergy || 'low' as 'high' | 'medium' | 'low'
+            } : null;
+          })
+          .filter(Boolean) as Array<{ card: Card; reason: string; level: 'high' | 'medium' | 'low' }>;
+        
+        if (synergyList.length > 0) {
+          synergies.set(card.id, synergyList);
+        }
+      } catch (error) {
+        console.error(`Error analyzing synergies for ${card.name}:`, error);
       }
     }
 
