@@ -10,15 +10,17 @@ import { KeywordAnalyzer } from './components/KeywordAnalyzer';
 import { CollectionViewer } from './components/CollectionViewer';
 import { CardDetail } from './components/CardDetail';
 import { DeckGenerator } from './components/DeckGenerator';
+import { CommanderDeckGenerator } from './components/CommanderDeckGenerator';
 import { ScryfallService } from './services/scryfall';
 import { MECHANICS, FORMATS } from './services/deckGenerator';
 import type { Card } from './types';
 import type { GeneratedDeck } from './services/deckGenerator';
+import type { CommanderDeckOption } from './services/commanderDeckGenerator';
 import './App.css';
 
 function App() {
   const { deck, addCard, removeCard, updateQuantity, moveCard, toggleWishlist, removeFromWishlist, updateWishlistQuantity, clearDeck, setDeckName } = useDeck();
-  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'generate' | 'import' | 'validate' | 'keywords'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'generate' | 'commander' | 'import' | 'validate' | 'keywords'>('search');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
 
   // Handle URL routing for card details
@@ -100,6 +102,12 @@ function App() {
           onClick={() => setActiveTab('generate')}
         >
           Generate Deck
+        </button>
+        <button
+          className={activeTab === 'commander' ? 'active' : ''}
+          onClick={() => setActiveTab('commander')}
+        >
+          Commander Deck
         </button>
         <button
           className={activeTab === 'import' ? 'active' : ''}
@@ -212,6 +220,23 @@ function App() {
             const formatName = FORMATS.find(f => f.id === generatedDeck.format)?.name || '';
             const mechanicName = MECHANICS.find(m => m.id === generatedDeck.mechanic)?.name || 'Generated';
             setDeckName(`${mechanicName} ${formatName} Deck`);
+            setActiveTab('build');
+          }} />
+        )}
+
+        {activeTab === 'commander' && (
+          <CommanderDeckGenerator onDeckGenerated={(option: CommanderDeckOption) => {
+            // Clear current deck
+            clearDeck();
+            // Add commander deck cards
+            option.cards.forEach(dc => {
+              addCard(dc.card, dc.quantity, false);
+            });
+            // Add suggested cards to wishlist
+            option.suggestedCards.forEach(suggestion => {
+              toggleWishlist(suggestion.card, 1);
+            });
+            setDeckName(option.name);
             setActiveTab('build');
           }} />
         )}
