@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { BulkCard } from '../types';
 import { CollectionService } from '../utils/collection';
 import { ScryfallService } from '../services/scryfall';
@@ -21,6 +21,7 @@ export function CollectionViewer() {
   const [selectedCategory, setSelectedCategory] = useState<CardCategory | 'All'>('All');
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [viewMode, setViewMode] = useState<ViewMode>('tile');
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     loadCollection();
@@ -28,7 +29,8 @@ export function CollectionViewer() {
 
   useEffect(() => {
     // Load card data for all cards (with batching to avoid rate limits)
-    if (collection.length > 0 && collection.some(c => !c.cardData && !c.loading)) {
+    // This will continuously load batches until all cards are loaded
+    if (collection.length > 0 && collection.some(c => !c.cardData && !c.loading) && !loadingRef.current) {
       loadCardDataBatch();
     }
   }, [collection.length]);
@@ -39,38 +41,78 @@ export function CollectionViewer() {
   };
 
   const loadCardDataBatch = async () => {
-    const cardsToLoad = collection.filter(c => !c.cardData && !c.loading).slice(0, 20);
-    if (cardsToLoad.length === 0) return;
+    if (loadingRef.current) return;
     
-    // Mark as loading
-    setCollection(prev => prev.map(c => 
-      cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)
-        ? { ...c, loading: true }
-        : c
-    ));
-
-    // Create a map of name->set for cards that have sets
-    const setMap = new Map<string, string>();
-    cardsToLoad.forEach(c => {
-      if (c.set) {
-        setMap.set(c.name, c.set);
+    // Get current collection state
+    setCollection(current => {
+      // Get cards that need loading from current state
+      const cardsToLoad = current.filter(c => !c.cardData && !c.loading).slice(0, 20);
+      if (cardsToLoad.length === 0) {
+        loadingRef.current = false;
+        return current;
       }
+      
+      loadingRef.current = true;
+      
+      // Mark as loading
+      const updated = current.map(c => 
+        cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)
+          ? { ...c, loading: true }
+          : c
+      );
+
+      // Create a map of name->set for cards that have sets
+      const setMap = new Map<string, string>();
+      cardsToLoad.forEach(c => {
+        if (c.set) {
+          setMap.set(c.name, c.set);
+        }
+      });
+
+      // Load in parallel batches for better performance
+      const cardNames = cardsToLoad.map(c => c.name);
+      ScryfallService.getCardsByName(cardNames, setMap.size > 0 ? setMap : undefined, 20)
+        .then(cardMap => {
+          // Update collection with loaded cards
+          setCollection(prev => {
+            const updated = prev.map(c => {
+              const card = cardMap.get(c.name);
+              if (card && cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)) {
+                return { ...c, cardData: card, loading: false };
+              } else if (cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)) {
+                return { ...c, loading: false };
+              }
+              return c;
+            });
+            
+            loadingRef.current = false;
+            
+            // Check if there are more cards to load and trigger next batch
+            const remaining = updated.filter(c => !c.cardData && !c.loading);
+            if (remaining.length > 0) {
+              // Trigger next batch after a short delay
+              setTimeout(() => {
+                loadCardDataBatch();
+              }, 100);
+            }
+            
+            return updated;
+          });
+        })
+        .catch(error => {
+          console.error('Error loading card batch:', error);
+          setCollection(prev => {
+            loadingRef.current = false;
+            return prev.map(c => 
+              cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)
+                ? { ...c, loading: false }
+                : c
+            );
+          });
+        });
+
+      return updated;
     });
-
-    // Load in parallel batches for better performance
-    const cardNames = cardsToLoad.map(c => c.name);
-    const cardMap = await ScryfallService.getCardsByName(cardNames, setMap.size > 0 ? setMap : undefined, 20);
-
-    // Update collection with loaded cards
-    setCollection(prev => prev.map(c => {
-      const card = cardMap.get(c.name);
-      if (card && cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)) {
-        return { ...c, cardData: card, loading: false };
-      } else if (cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)) {
-        return { ...c, loading: false };
-      }
-      return c;
-    }));
   };
 
   const loadCardDetails = async (bulkCard: CollectionCard) => {
