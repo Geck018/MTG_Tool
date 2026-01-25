@@ -185,10 +185,13 @@ export class DeckGenerator {
 
       // Color preference bonus
       if (mechanic.colorPreferences && mechanic.colorPreferences.length > 0) {
-        const cardColors = card.color_identity || card.colors || [];
-        const hasPreferredColor = mechanic.colorPreferences.some(c => cardColors.includes(c));
-        if (hasPreferredColor) {
-          score += 2;
+        const cardColors = Array.isArray(card.color_identity) ? card.color_identity : 
+                          (Array.isArray(card.colors) ? card.colors : []);
+        if (Array.isArray(cardColors) && cardColors.length > 0) {
+          const hasPreferredColor = mechanic.colorPreferences.some(c => cardColors.includes(c));
+          if (hasPreferredColor) {
+            score += 2;
+          }
         }
       }
 
@@ -324,22 +327,26 @@ export class DeckGenerator {
     const suggestions: Array<{ card: Card; reason: string; priority: 'high' | 'medium' | 'low' }> = [];
     
     // Search Scryfall for popular cards matching the mechanic
-    const searchQueries = [
-      ...mechanic.keywords.slice(0, 2).map(k => `oracle:${k}`),
-      ...(mechanic.colorPreferences || []).map(c => `color=${c.toLowerCase()}`)
-    ];
+    const searchQueries: string[] = [];
+    if (mechanic.keywords && Array.isArray(mechanic.keywords)) {
+      searchQueries.push(...mechanic.keywords.slice(0, 2).map(k => `oracle:${k || ''}`));
+    }
+    if (mechanic.colorPreferences && Array.isArray(mechanic.colorPreferences)) {
+      searchQueries.push(...mechanic.colorPreferences.map(c => `color=${(c || '').toLowerCase()}`));
+    }
 
     for (const query of searchQueries.slice(0, 3)) {
       try {
         const results = await ScryfallService.searchCard(query);
-        const topResults = results
-          .filter(card => !deckCards.some(dc => dc.id === card.id))
+        const topResults = (results || [])
+          .filter(card => card && card.id && !deckCards.some(dc => dc && dc.id === card.id))
           .slice(0, 5);
         
         for (const card of topResults) {
+          if (!card) continue;
           const oracleText = (card.oracle_text || '').toLowerCase();
-          const matchesMechanic = mechanic.keywords.some(k => 
-            oracleText.includes(k.toLowerCase())
+          const matchesMechanic = (mechanic.keywords || []).some(k => 
+            oracleText.includes((k || '').toLowerCase())
           );
           
           if (matchesMechanic) {
@@ -359,7 +366,8 @@ export class DeckGenerator {
 
     // Remove duplicates and limit to top 10
     const unique = suggestions.filter((s, i, self) => 
-      i === self.findIndex(ss => ss.card.id === s.card.id)
+      s && s.card && s.card.id && 
+      i === self.findIndex(ss => ss && ss.card && ss.card.id === s.card.id)
     );
 
     return unique.slice(0, 10);
@@ -368,19 +376,30 @@ export class DeckGenerator {
   private static getColorIdentity(cards: Card[]): string[] {
     const colors = new Set<string>();
     for (const card of cards) {
-      const cardColors = card.color_identity || card.colors || [];
-      cardColors.forEach(c => colors.add(c));
+      const cardColors = Array.isArray(card.color_identity) ? card.color_identity : 
+                        (Array.isArray(card.colors) ? card.colors : []);
+      if (Array.isArray(cardColors)) {
+        cardColors.forEach(c => colors.add(c));
+      }
     }
     return Array.from(colors).sort();
   }
 
   private static calculateSynergyScore(cards: Card[], synergies: Map<string, Array<{ card: Card; reason: string; level: 'high' | 'medium' | 'low' }>>): number {
+    if (!cards || cards.length === 0) return 0;
+    
     let score = 0;
     const levelScores = { high: 3, medium: 2, low: 1 };
     
     for (const card of cards) {
+      if (!card || !card.id) continue;
       const cardSynergies = synergies.get(card.id) || [];
-      score += cardSynergies.reduce((sum, s) => sum + levelScores[s.level], 0);
+      if (Array.isArray(cardSynergies)) {
+        score += cardSynergies.reduce((sum, s) => {
+          if (!s || !s.level) return sum;
+          return sum + (levelScores[s.level] || 0);
+        }, 0);
+      }
     }
     
     return Math.min(100, Math.round((score / cards.length) * 10));
