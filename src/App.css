@@ -1756,7 +1756,6 @@ body {
 .mana-curve-bar {
   width: 100%;
   max-width: 40px;
-  background: linear-gradient(to top, var(--accent), var(--accent-hover));
   border-radius: 4px 4px 0 0;
   transition: all 0.3s ease;
   position: relative;
@@ -1766,6 +1765,8 @@ body {
   justify-content: center;
   padding-top: 0.25rem;
   cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .mana-curve-bar:hover {
