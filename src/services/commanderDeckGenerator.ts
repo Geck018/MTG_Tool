@@ -201,7 +201,7 @@ export class CommanderDeckGenerator {
     commander: Card,
     collectionCards: Array<{ bulkCard: BulkCard; card: Card }>,
     strategy: { name: string; description: string; keywords: string[] },
-    _format: FormatType
+    format: FormatType
   ): Promise<{ cards: DeckCard[] } | null> {
     const deckCards: DeckCard[] = [];
     const usedCardIds = new Set<string>();
@@ -264,12 +264,13 @@ export class CommanderDeckGenerator {
       .sort((a, b) => b.score - a.score);
 
     // Target: 99 cards (100 total including commander)
-    const targetCards = 99;
+    // We'll build ~63 non-land cards, then add ~36 recommended lands
+    const targetNonLands = 63;
     let cardCount = 0;
 
     // Add non-land cards
     for (const { bulkCard, card } of scoredCards) {
-      if (cardCount >= targetCards) break;
+      if (cardCount >= targetNonLands) break;
       if (card.type_line.toLowerCase().includes('land')) continue;
       if (usedCardIds.has(card.id)) continue;
 
@@ -281,44 +282,18 @@ export class CommanderDeckGenerator {
       }
     }
 
-    // Add lands (aim for ~36-40 lands in Commander)
+    // Generate recommended land base (aim for ~36-40 lands in Commander)
     const targetLands = 36;
     const commanderColors = commander.color_identity || commander.colors || [];
     const colorArray = Array.isArray(commanderColors) ? commanderColors : [];
-    const basicLands = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
-    const landMap: Record<string, string> = {
-      'W': 'Plains',
-      'U': 'Island',
-      'B': 'Swamp',
-      'R': 'Mountain',
-      'G': 'Forest'
-    };
-
-    let landCount = 0;
-
-    // Add basic lands for each color
-    for (const color of colorArray) {
-      const landName = landMap[color];
-      if (landName) {
-        const bulkCard = collectionCards.find(m => m.bulkCard.name === landName);
-        if (bulkCard && landCount < targetLands && !usedCardIds.has(bulkCard.card.id)) {
-          deckCards.push({ card: bulkCard.card, quantity: 1 });
-          usedCardIds.add(bulkCard.card.id);
-          landCount++;
-        }
-      }
-    }
-
-    // Add other lands
-    for (const { card } of scoredCards) {
-      if (landCount >= targetLands) break;
-      if (!card.type_line.toLowerCase().includes('land')) continue;
-      if (usedCardIds.has(card.id)) continue;
-      if (basicLands.includes(card.name)) continue;
-
-      deckCards.push({ card, quantity: 1 });
-      usedCardIds.add(card.id);
-      landCount++;
+    
+    const recommendedLands = await this.generateRecommendedLandBase(colorArray, targetLands, format);
+    
+    for (const land of recommendedLands) {
+      if (usedCardIds.has(land.id)) continue;
+      
+      deckCards.push({ card: land, quantity: 1 });
+      usedCardIds.add(land.id);
     }
 
     return { cards: deckCards };
@@ -446,5 +421,162 @@ export class CommanderDeckGenerator {
     }
     
     return keywords;
+  }
+
+  private static async generateRecommendedLandBase(
+    colorIdentity: string[],
+    targetCount: number,
+    format: FormatType
+  ): Promise<Card[]> {
+    const lands: Card[] = [];
+    const landMap: Record<string, string> = {
+      'W': 'Plains',
+      'U': 'Island',
+      'B': 'Swamp',
+      'R': 'Mountain',
+      'G': 'Forest'
+    };
+
+    // Always include Command Tower (if multicolor)
+    if (colorIdentity.length > 1) {
+      try {
+        const commandTower = await ScryfallService.getCardByName('Command Tower');
+        if (commandTower && commandTower.type_line.toLowerCase().includes('land')) {
+          const legalities = commandTower.legalities || {};
+          const formatLegality = legalities[format.toLowerCase()];
+          const isLegal = formatLegality === 'legal' || formatLegality === undefined || formatLegality === null;
+          if (isLegal) {
+            lands.push(commandTower);
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } catch (error) {
+        console.error('Error loading Command Tower:', error);
+      }
+    }
+
+    // Add basic lands (one of each color)
+    for (const color of colorIdentity) {
+      const landName = landMap[color];
+      if (landName) {
+        try {
+          const basicLand = await ScryfallService.getCardByName(landName);
+          if (basicLand && basicLand.type_line.toLowerCase().includes('land')) {
+            lands.push(basicLand);
+          }
+          await new Promise(resolve => setTimeout(resolve, 50));
+        } catch (error) {
+          console.error(`Error loading ${landName}:`, error);
+        }
+      }
+    }
+
+    // Search for dual lands and nonbasic lands based on color identity
+    if (colorIdentity.length >= 2) {
+      // Search for popular nonbasic lands that match color identity
+      const colorQuery = colorIdentity.map(c => c.toLowerCase()).join('');
+      try {
+        // Search for lands that produce multiple colors in the identity
+        const landQuery = `t:land (id:${colorQuery} OR id<=${colorQuery}) -t:basic -t:basic`;
+        const results = await ScryfallService.searchCard(landQuery);
+        if (results && Array.isArray(results)) {
+          const validLands = results
+            .filter(card => {
+              if (!card || !card.id) return false;
+              if (!card.type_line.toLowerCase().includes('land')) return false;
+              // Check format legality
+              const legalities = card.legalities || {};
+              const formatLegality = legalities[format.toLowerCase()];
+              const isLegal = formatLegality === 'legal' || formatLegality === undefined || formatLegality === null;
+              // Check color identity matches
+              const cardColors = card.color_identity || card.colors || [];
+              const cardColorArray = Array.isArray(cardColors) ? cardColors : [];
+              if (cardColorArray.length > 0) {
+                const matchesIdentity = cardColorArray.every(c => colorIdentity.includes(c));
+                if (!matchesIdentity) return false;
+              }
+              // Prefer lands that produce mana (not just utility lands)
+              const oracleText = (card.oracle_text || '').toLowerCase();
+              const producesMana = oracleText.includes('add') || oracleText.includes('tap') || 
+                                   card.type_line.toLowerCase().includes('basic');
+              return isLegal && (producesMana || card.name.toLowerCase().includes('command tower') || 
+                                card.name.toLowerCase().includes('exotic orchard') ||
+                                card.name.toLowerCase().includes('reflecting pool'));
+            })
+            .slice(0, 8); // Top 8 nonbasic lands
+          
+          for (const land of validLands) {
+            if (lands.length >= targetCount) break;
+            if (lands.some(l => l.id === land.id)) continue; // Avoid duplicates
+            lands.push(land);
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 200));
+      } catch (error) {
+        console.error('Error searching for nonbasic lands:', error);
+      }
+    }
+
+    // Add utility artifacts/rocks (treated as lands for mana fixing)
+    const utilityArtifactNames = ['Sol Ring', 'Arcane Signet', 'Fellwar Stone'];
+    for (const name of utilityArtifactNames) {
+      if (lands.length >= targetCount) break;
+      try {
+        const card = await ScryfallService.getCardByName(name);
+        if (card) {
+          const legalities = card.legalities || {};
+          const formatLegality = legalities[format.toLowerCase()];
+          const isLegal = formatLegality === 'legal' || formatLegality === undefined || formatLegality === null;
+          // Include mana rocks
+          const isManaSource = card.type_line.toLowerCase().includes('artifact') && 
+                              (card.oracle_text?.toLowerCase().includes('add') || 
+                               card.oracle_text?.toLowerCase().includes('mana') ||
+                               name === 'Sol Ring' || name === 'Arcane Signet');
+          if (isLegal && isManaSource && !lands.some(l => l.id === card.id)) {
+            lands.push(card);
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } catch (error) {
+        console.error(`Error loading ${name}:`, error);
+      }
+    }
+
+    // Fill remaining slots with basic lands (if needed)
+    const currentCount = lands.length;
+    if (currentCount < targetCount) {
+      const needed = targetCount - currentCount;
+      const basicCounts: Record<string, number> = {};
+      
+      // Distribute remaining slots among basic lands
+      for (const color of colorIdentity) {
+        const landName = landMap[color];
+        if (landName) {
+          basicCounts[landName] = Math.ceil(needed / colorIdentity.length);
+        }
+      }
+
+      // Add additional basics
+      for (const [landName, count] of Object.entries(basicCounts)) {
+        if (lands.length >= targetCount) break;
+        try {
+          const basicLand = await ScryfallService.getCardByName(landName);
+          if (basicLand && basicLand.type_line.toLowerCase().includes('land')) {
+            // Add multiple copies of the same basic (though in Commander we only need 1, but for display)
+            for (let i = 0; i < Math.min(count, 3) && lands.length < targetCount; i++) {
+              // In Commander, we can only have 1 of each, but we'll add it once and note the recommendation
+              if (!lands.some(l => l.id === basicLand.id)) {
+                lands.push(basicLand);
+              }
+            }
+          }
+          await new Promise(resolve => setTimeout(resolve, 50));
+        } catch (error) {
+          console.error(`Error loading additional ${landName}:`, error);
+        }
+      }
+    }
+
+    return lands.slice(0, targetCount);
   }
 }
