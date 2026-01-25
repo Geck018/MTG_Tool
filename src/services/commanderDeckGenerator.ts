@@ -282,12 +282,34 @@ export class CommanderDeckGenerator {
       }
     }
 
-    // Generate recommended land base (aim for ~36-40 lands in Commander)
-    const targetLands = 36;
+    // Calculate mana curve and color requirements from non-land cards
+    const nonLandCards = deckCards.filter(dc => !dc.card.type_line.toLowerCase().includes('land'));
+    const manaCurve = this.calculateManaCurve(nonLandCards);
+    const colorRequirements = this.analyzeColorRequirements(nonLandCards);
+    
+    // Adjust land count based on average CMC
+    const avgCMC = this.calculateAverageCMC(nonLandCards);
+    const baseLands = 36;
+    let targetLands = baseLands;
+    
+    // Adjust based on average CMC
+    if (avgCMC < 2.5) {
+      targetLands = 33; // Low curve = fewer lands needed
+    } else if (avgCMC > 4.0) {
+      targetLands = 38; // High curve = more lands needed
+    }
+    
     const commanderColors = commander.color_identity || commander.colors || [];
     const colorArray = Array.isArray(commanderColors) ? commanderColors : [];
     
-    const recommendedLands = await this.generateRecommendedLandBase(colorArray, targetLands, format);
+    const recommendedLands = await this.generateRecommendedLandBase(
+      colorArray, 
+      targetLands, 
+      format,
+      manaCurve,
+      colorRequirements,
+      avgCMC
+    );
     
     for (const land of recommendedLands) {
       if (usedCardIds.has(land.id)) continue;
@@ -423,10 +445,86 @@ export class CommanderDeckGenerator {
     return keywords;
   }
 
+  private static calculateManaCurve(deckCards: DeckCard[]): Array<{ cmc: number; count: number }> {
+    const curve: { [cmc: number]: number } = {};
+    
+    for (const deckCard of deckCards) {
+      const cmc = deckCard.card.cmc || 0;
+      curve[cmc] = (curve[cmc] || 0) + deckCard.quantity;
+    }
+
+    return Object.entries(curve)
+      .map(([cmc, count]) => ({ cmc: parseInt(cmc), count }))
+      .sort((a, b) => a.cmc - b.cmc);
+  }
+
+  private static calculateAverageCMC(deckCards: DeckCard[]): number {
+    if (deckCards.length === 0) return 0;
+    
+    let totalCMC = 0;
+    let totalCards = 0;
+    
+    for (const deckCard of deckCards) {
+      const cmc = deckCard.card.cmc || 0;
+      totalCMC += cmc * deckCard.quantity;
+      totalCards += deckCard.quantity;
+    }
+    
+    return totalCards > 0 ? totalCMC / totalCards : 0;
+  }
+
+  private static analyzeColorRequirements(deckCards: DeckCard[]): Map<string, number> {
+    const colorWeights = new Map<string, number>();
+    
+    for (const deckCard of deckCards) {
+      const card = deckCard.card;
+      const quantity = deckCard.quantity;
+      const cmc = card.cmc || 0;
+      
+      // Parse mana cost to extract color requirements
+      const manaCost = card.mana_cost || '';
+      const colorMap: Record<string, string> = {
+        'W': 'W',
+        'U': 'U',
+        'B': 'B',
+        'R': 'R',
+        'G': 'G'
+      };
+      
+      // Count colored mana symbols in mana cost
+      const manaSymbols = manaCost.match(/[WUBRG]/g) || [];
+      for (const symbol of manaSymbols) {
+        const color = colorMap[symbol];
+        if (color) {
+          const currentWeight = colorWeights.get(color) || 0;
+          // Weight by CMC and quantity (higher CMC cards need more mana sources)
+          const weight = (cmc + 1) * quantity;
+          colorWeights.set(color, currentWeight + weight);
+        }
+      }
+      
+      // Also consider color identity if no explicit mana cost
+      if (manaSymbols.length === 0) {
+        const cardColors = card.color_identity || card.colors || [];
+        const cardColorArray = Array.isArray(cardColors) ? cardColors : [];
+        for (const color of cardColorArray) {
+          const currentWeight = colorWeights.get(color) || 0;
+          const weight = (cmc + 1) * quantity * 0.5; // Lower weight for implicit colors
+          colorWeights.set(color, currentWeight + weight);
+        }
+      }
+    }
+    
+    return colorWeights;
+  }
+
   private static async generateRecommendedLandBase(
     colorIdentity: string[],
     targetCount: number,
-    format: FormatType
+    format: FormatType,
+    _manaCurve: Array<{ cmc: number; count: number }> = [],
+    colorRequirements: Map<string, number> = new Map(),
+    avgCMC: number = 0
   ): Promise<Card[]> {
     const lands: Card[] = [];
     const landMap: Record<string, string> = {
@@ -455,18 +553,59 @@ export class CommanderDeckGenerator {
       }
     }
 
-    // Add basic lands (one of each color)
+    // Add basic lands based on color requirements (not just one of each)
+    // Calculate total color weight
+    let totalWeight = 0;
     for (const color of colorIdentity) {
-      const landName = landMap[color];
-      if (landName) {
-        try {
-          const basicLand = await ScryfallService.getCardByName(landName);
-          if (basicLand && basicLand.type_line.toLowerCase().includes('land')) {
-            lands.push(basicLand);
+      totalWeight += colorRequirements.get(color) || 0;
+    }
+    
+    // If no color requirements, add one of each basic
+    if (totalWeight === 0) {
+      for (const color of colorIdentity) {
+        const landName = landMap[color];
+        if (landName) {
+          try {
+            const basicLand = await ScryfallService.getCardByName(landName);
+            if (basicLand && basicLand.type_line.toLowerCase().includes('land')) {
+              lands.push(basicLand);
+            }
+            await new Promise(resolve => setTimeout(resolve, 50));
+          } catch (error) {
+            console.error(`Error loading ${landName}:`, error);
           }
-          await new Promise(resolve => setTimeout(resolve, 50));
-        } catch (error) {
-          console.error(`Error loading ${landName}:`, error);
+        }
+      }
+    } else {
+      // Distribute basics based on color requirements
+      // Sort colors by weight to prioritize most-needed colors
+      const sortedColors = [...colorIdentity].sort((a, b) => {
+        const weightA = colorRequirements.get(a) || 0;
+        const weightB = colorRequirements.get(b) || 0;
+        return weightB - weightA;
+      });
+      
+      for (const color of sortedColors) {
+        const weight = colorRequirements.get(color) || 0;
+        const proportion = totalWeight > 0 ? weight / totalWeight : 1 / colorIdentity.length;
+        
+        // Add basics for colors that have significant requirements (>10% of total)
+        if (proportion > 0.1 || weight > 0) {
+          const landName = landMap[color];
+          if (landName) {
+            try {
+              const basicLand = await ScryfallService.getCardByName(landName);
+              if (basicLand && basicLand.type_line.toLowerCase().includes('land')) {
+                // In Commander, we can only have 1 of each basic
+                if (!lands.some(l => l.id === basicLand.id)) {
+                  lands.push(basicLand);
+                }
+              }
+              await new Promise(resolve => setTimeout(resolve, 50));
+            } catch (error) {
+              console.error(`Error loading ${landName}:`, error);
+            }
+          }
         }
       }
     }
@@ -517,10 +656,13 @@ export class CommanderDeckGenerator {
       }
     }
 
-    // Add utility artifacts/rocks (treated as lands for mana fixing)
+    // Add utility artifacts/rocks (more important for high CMC decks)
     const utilityArtifactNames = ['Sol Ring', 'Arcane Signet', 'Fellwar Stone'];
-    for (const name of utilityArtifactNames) {
+    const rampCount = avgCMC > 3.5 ? 3 : (avgCMC > 2.5 ? 2 : 1); // More ramp for higher curves
+    
+    for (let i = 0; i < Math.min(utilityArtifactNames.length, rampCount); i++) {
       if (lands.length >= targetCount) break;
+      const name = utilityArtifactNames[i];
       try {
         const card = await ScryfallService.getCardByName(name);
         if (card) {
@@ -542,37 +684,36 @@ export class CommanderDeckGenerator {
       }
     }
 
-    // Fill remaining slots with basic lands (if needed)
-    const currentCount = lands.length;
-    if (currentCount < targetCount) {
-      const needed = targetCount - currentCount;
-      const basicCounts: Record<string, number> = {};
+    // Fill remaining slots with basics based on color requirements (if needed)
+    if (lands.length < targetCount && totalWeight > 0) {
+      const sortedColors = [...colorIdentity].sort((a, b) => {
+        const weightA = colorRequirements.get(a) || 0;
+        const weightB = colorRequirements.get(b) || 0;
+        return weightB - weightA;
+      });
       
-      // Distribute remaining slots among basic lands
-      for (const color of colorIdentity) {
-        const landName = landMap[color];
-        if (landName) {
-          basicCounts[landName] = Math.ceil(needed / colorIdentity.length);
-        }
-      }
-
-      // Add additional basics
-      for (const [landName, count] of Object.entries(basicCounts)) {
+      // Add basics in order of color requirement until we reach target
+      for (const color of sortedColors) {
         if (lands.length >= targetCount) break;
-        try {
-          const basicLand = await ScryfallService.getCardByName(landName);
-          if (basicLand && basicLand.type_line.toLowerCase().includes('land')) {
-            // Add multiple copies of the same basic (though in Commander we only need 1, but for display)
-            for (let i = 0; i < Math.min(count, 3) && lands.length < targetCount; i++) {
-              // In Commander, we can only have 1 of each, but we'll add it once and note the recommendation
-              if (!lands.some(l => l.id === basicLand.id)) {
-                lands.push(basicLand);
+        const weight = colorRequirements.get(color) || 0;
+        const proportion = totalWeight > 0 ? weight / totalWeight : 1 / colorIdentity.length;
+        
+        // Add basics based on proportion of color requirements
+        if (proportion > 0.1) { // Only add if color represents >10% of requirements
+          const landName = landMap[color];
+          if (landName) {
+            try {
+              const basicLand = await ScryfallService.getCardByName(landName);
+              if (basicLand && basicLand.type_line.toLowerCase().includes('land')) {
+                if (!lands.some(l => l.id === basicLand.id)) {
+                  lands.push(basicLand);
+                }
               }
+              await new Promise(resolve => setTimeout(resolve, 50));
+            } catch (error) {
+              console.error(`Error loading additional ${landName}:`, error);
             }
           }
-          await new Promise(resolve => setTimeout(resolve, 50));
-        } catch (error) {
-          console.error(`Error loading additional ${landName}:`, error);
         }
       }
     }
