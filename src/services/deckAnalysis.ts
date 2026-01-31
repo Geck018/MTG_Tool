@@ -203,9 +203,9 @@ export class DeckAnalysisService {
   }
 
   private static determineArchetype(
-    cards: Card[],
+    _cards: Card[],
     manaCurve: Array<{ cmc: number; count: number }>,
-    colorDistribution: { [color: string]: number },
+    _colorDistribution: { [color: string]: number },
     keyMechanics: string[]
   ): string {
     const avgCMC = manaCurve.reduce((sum, mc) => sum + (mc.cmc * mc.count), 0) / 
@@ -239,7 +239,7 @@ export class DeckAnalysisService {
 
   private static generateStrategyText(
     archetype: string,
-    cards: Card[],
+    _cards: Card[],
     manaCurve: Array<{ cmc: number; count: number }>,
     colorDistribution: { [color: string]: number },
     keyMechanics: string[]
@@ -325,9 +325,9 @@ export class DeckAnalysisService {
 
   private static identifyWeaknesses(
     archetype: string,
-    cards: Card[],
+    _cards: Card[],
     manaCurve: Array<{ cmc: number; count: number }>,
-    keyMechanics: string[],
+    _keyMechanics: string[],
     deckCards: DeckCard[]
   ): string[] {
     const weaknesses: string[] = [];
@@ -780,8 +780,8 @@ export class DeckAnalysisService {
   }
 
   private static determineImprovementPriority(
-    card: Card,
-    deckCards: Card[],
+    _card: Card,
+    _deckCards: Card[],
     reason: string
   ): 'high' | 'medium' | 'low' {
     if (reason.includes('Synergizes') || reason.includes('Tribal')) {
@@ -876,7 +876,7 @@ export class DeckAnalysisService {
 
   private static async getGapRecommendations(
     deck: Deck,
-    strategy: StrategyAnalysis
+    _strategy: StrategyAnalysis
   ): Promise<PurchaseRecommendation[]> {
     const recommendations: PurchaseRecommendation[] = [];
     const allCards = [...deck.cards, ...deck.sideboard].map(dc => dc.card);

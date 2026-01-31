@@ -275,12 +275,12 @@ function App() {
         )}
 
         {activeTab === 'analysis' && (
-          <DeckAnalysis onDeckAnalyzed={(importedDeck) => {
+          <DeckAnalysis onDeckAnalyzed={(_importedDeck) => {
             // Optionally load the analyzed deck into the builder
             // clearDeck();
-            // importedDeck.cards.forEach(dc => addCard(dc.card, dc.quantity, false));
-            // importedDeck.sideboard.forEach(dc => addCard(dc.card, dc.quantity, true));
-            // setDeckName(importedDeck.name);
+            // _importedDeck.cards.forEach(dc => addCard(dc.card, dc.quantity, false));
+            // _importedDeck.sideboard.forEach(dc => addCard(dc.card, dc.quantity, true));
+            // setDeckName(_importedDeck.name);
           }} />
         )}
       </main>
