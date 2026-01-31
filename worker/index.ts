@@ -1,6 +1,7 @@
 /**
  * MTG Deck Builder API Worker
  * Handles all database operations via Cloudflare D1
+ * Cards are stored as references (scryfall_id only) - details fetched from Scryfall API
  */
 
 export interface Env {
@@ -11,7 +12,7 @@ export interface Env {
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
 // Helper to create JSON response
@@ -43,34 +44,77 @@ function addRoute(method: string, path: string, handler: RouteHandler) {
 }
 
 // ============================================
-// USER ROUTES
+// AUTH ROUTES (Simple username-based)
 // ============================================
 
-// Create user
-addRoute('POST', '/api/users', async (request, env) => {
-  const { username } = await parseBody<{ username: string }>(request);
+// Signup - create new user
+addRoute('POST', '/api/auth/signup', async (request, env) => {
+  const { username, display_name } = await parseBody<{ username: string; display_name?: string }>(request);
   
   if (!username || username.length < 3) {
     return jsonResponse({ error: 'Username must be at least 3 characters' }, 400);
   }
 
+  if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+    return jsonResponse({ error: 'Username can only contain letters, numbers, and underscores' }, 400);
+  }
+
   try {
-    await env.DB.prepare('INSERT INTO users (username) VALUES (?)').bind(username).run();
-    return jsonResponse({ username, created: true }, 201);
+    await env.DB.prepare(
+      'INSERT INTO users (username, display_name) VALUES (?, ?)'
+    ).bind(username.toLowerCase(), display_name || username).run();
+    
+    return jsonResponse({ 
+      username: username.toLowerCase(), 
+      display_name: display_name || username,
+      created: true 
+    }, 201);
   } catch (e: unknown) {
     const error = e as Error;
     if (error.message?.includes('UNIQUE constraint')) {
-      return jsonResponse({ error: 'Username already exists' }, 409);
+      return jsonResponse({ error: 'Username already taken' }, 409);
     }
     throw e;
   }
 });
 
-// Get user
+// Login - just verify user exists
+addRoute('POST', '/api/auth/login', async (request, env) => {
+  const { username } = await parseBody<{ username: string }>(request);
+  
+  if (!username) {
+    return jsonResponse({ error: 'Username is required' }, 400);
+  }
+
+  const user = await env.DB.prepare(
+    'SELECT username, display_name, created_at FROM users WHERE username = ?'
+  ).bind(username.toLowerCase()).first();
+  
+  if (!user) {
+    return jsonResponse({ error: 'User not found. Please sign up first.' }, 404);
+  }
+  
+  return jsonResponse(user);
+});
+
+// Check if username is available
+addRoute('GET', '/api/auth/check/:username', async (_request, env, params) => {
+  const user = await env.DB.prepare(
+    'SELECT username FROM users WHERE username = ?'
+  ).bind(params.username.toLowerCase()).first();
+  
+  return jsonResponse({ available: !user });
+});
+
+// ============================================
+// USER ROUTES
+// ============================================
+
+// Get user profile
 addRoute('GET', '/api/users/:username', async (_request, env, params) => {
-  const user = await env.DB.prepare('SELECT * FROM users WHERE username = ?')
-    .bind(params.username)
-    .first();
+  const user = await env.DB.prepare(
+    'SELECT username, display_name, created_at FROM users WHERE username = ?'
+  ).bind(params.username.toLowerCase()).first();
   
   if (!user) {
     return jsonResponse({ error: 'User not found' }, 404);
@@ -79,11 +123,14 @@ addRoute('GET', '/api/users/:username', async (_request, env, params) => {
   return jsonResponse(user);
 });
 
-// Get user's collection
+// Get user's card collection (just scryfall_ids and quantities)
 addRoute('GET', '/api/users/:username/collection', async (_request, env, params) => {
   const cards = await env.DB.prepare(`
-    SELECT * FROM user_collection WHERE username = ?
-  `).bind(params.username).all();
+    SELECT scryfall_id, quantity, added_at 
+    FROM user_cards 
+    WHERE username = ?
+    ORDER BY added_at DESC
+  `).bind(params.username.toLowerCase()).all();
   
   return jsonResponse(cards.results);
 });
@@ -92,99 +139,72 @@ addRoute('GET', '/api/users/:username/collection', async (_request, env, params)
 addRoute('GET', '/api/users/:username/decks', async (_request, env, params) => {
   const decks = await env.DB.prepare(`
     SELECT * FROM user_decks WHERE username = ?
-  `).bind(params.username).all();
+    ORDER BY updated_at DESC
+  `).bind(params.username.toLowerCase()).all();
   
   return jsonResponse(decks.results);
 });
 
 // ============================================
-// CARD ROUTES
+// COLLECTION ROUTES (Cards user owns)
 // ============================================
 
-// Create card (add to database)
-addRoute('POST', '/api/cards', async (request, env) => {
-  const { scryfall_id, name, mana_value, power, toughness, card_type, image_url } = 
-    await parseBody<{
-      scryfall_id?: string;
-      name: string;
-      mana_value?: number;
-      power?: string;
-      toughness?: string;
-      card_type?: string;
-      image_url?: string;
-    }>(request);
+// Add card to collection
+addRoute('POST', '/api/collection/add', async (request, env) => {
+  const { username, scryfall_id, quantity } = await parseBody<{
+    username: string;
+    scryfall_id: string;
+    quantity?: number;
+  }>(request);
 
-  if (!name) {
-    return jsonResponse({ error: 'Card name is required' }, 400);
+  if (!username || !scryfall_id) {
+    return jsonResponse({ error: 'Username and scryfall_id are required' }, 400);
   }
 
-  const result = await env.DB.prepare(`
-    INSERT INTO cards (scryfall_id, name, mana_value, power, toughness, card_type, image_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).bind(
-    scryfall_id || null,
-    name,
-    mana_value || 0,
-    power || null,
-    toughness || null,
-    card_type || null,
-    image_url || null
-  ).run();
+  // Ensure card reference exists
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO cards (scryfall_id) VALUES (?)'
+  ).bind(scryfall_id).run();
 
-  return jsonResponse({ id: result.meta.last_row_id, name }, 201);
-});
-
-// Get card by ID
-addRoute('GET', '/api/cards/:id', async (_request, env, params) => {
-  const card = await env.DB.prepare('SELECT * FROM cards WHERE id = ?')
-    .bind(parseInt(params.id))
-    .first();
-  
-  if (!card) {
-    return jsonResponse({ error: 'Card not found' }, 404);
-  }
-  
-  return jsonResponse(card);
-});
-
-// Search cards by name
-addRoute('GET', '/api/cards', async (request, env) => {
-  const url = new URL(request.url);
-  const search = url.searchParams.get('search') || '';
-  const limit = parseInt(url.searchParams.get('limit') || '50');
-
-  const cards = await env.DB.prepare(`
-    SELECT * FROM cards WHERE name LIKE ? LIMIT ?
-  `).bind(`%${search}%`, limit).all();
-
-  return jsonResponse(cards.results);
-});
-
-// Add card to user's collection
-addRoute('POST', '/api/cards/:id/owners', async (request, env, params) => {
-  const { username, quantity } = await parseBody<{ username: string; quantity?: number }>(request);
-  const cardId = parseInt(params.id);
-
-  try {
-    await env.DB.prepare(`
-      INSERT INTO card_owners (card_id, username, quantity)
-      VALUES (?, ?, ?)
-      ON CONFLICT (card_id, username) DO UPDATE SET quantity = quantity + excluded.quantity
-    `).bind(cardId, username, quantity || 1).run();
-
-    return jsonResponse({ card_id: cardId, username, added: true });
-  } catch (e) {
-    return jsonResponse({ error: 'Failed to add card to collection' }, 400);
-  }
-});
-
-// Remove card from user's collection
-addRoute('DELETE', '/api/cards/:id/owners/:username', async (_request, env, params) => {
-  const cardId = parseInt(params.id);
-  
+  // Add to user's collection (upsert)
   await env.DB.prepare(`
-    DELETE FROM card_owners WHERE card_id = ? AND username = ?
-  `).bind(cardId, params.username).run();
+    INSERT INTO user_cards (scryfall_id, username, quantity)
+    VALUES (?, ?, ?)
+    ON CONFLICT (scryfall_id, username) 
+    DO UPDATE SET quantity = quantity + excluded.quantity
+  `).bind(scryfall_id, username.toLowerCase(), quantity || 1).run();
+
+  return jsonResponse({ scryfall_id, username, quantity: quantity || 1, added: true });
+});
+
+// Update card quantity in collection
+addRoute('PUT', '/api/collection/update', async (request, env) => {
+  const { username, scryfall_id, quantity } = await parseBody<{
+    username: string;
+    scryfall_id: string;
+    quantity: number;
+  }>(request);
+
+  if (quantity <= 0) {
+    // Remove from collection if quantity is 0 or negative
+    await env.DB.prepare(
+      'DELETE FROM user_cards WHERE scryfall_id = ? AND username = ?'
+    ).bind(scryfall_id, username.toLowerCase()).run();
+    return jsonResponse({ scryfall_id, removed: true });
+  }
+
+  await env.DB.prepare(
+    'UPDATE user_cards SET quantity = ? WHERE scryfall_id = ? AND username = ?'
+  ).bind(quantity, scryfall_id, username.toLowerCase()).run();
+
+  return jsonResponse({ scryfall_id, quantity, updated: true });
+});
+
+// Remove card from collection
+addRoute('DELETE', '/api/collection/:username/:scryfallId', async (_request, env, params) => {
+  await env.DB.prepare(
+    'DELETE FROM user_cards WHERE scryfall_id = ? AND username = ?'
+  ).bind(params.scryfallId, params.username.toLowerCase()).run();
 
   return jsonResponse({ deleted: true });
 });
@@ -195,26 +215,32 @@ addRoute('DELETE', '/api/cards/:id/owners/:username', async (_request, env, para
 
 // Create deck
 addRoute('POST', '/api/decks', async (request, env) => {
-  const { name, commander_card_id, format, description, owner_username } = 
-    await parseBody<{
-      name: string;
-      commander_card_id?: number;
-      format?: string;
-      description?: string;
-      owner_username: string;
-    }>(request);
+  const { name, commander_id, format, description, owner_username } = await parseBody<{
+    name: string;
+    commander_id?: string;
+    format?: string;
+    description?: string;
+    owner_username: string;
+  }>(request);
 
   if (!name || !owner_username) {
-    return jsonResponse({ error: 'Deck name and owner username are required' }, 400);
+    return jsonResponse({ error: 'Deck name and owner_username are required' }, 400);
+  }
+
+  // If commander specified, ensure card reference exists
+  if (commander_id) {
+    await env.DB.prepare(
+      'INSERT OR IGNORE INTO cards (scryfall_id) VALUES (?)'
+    ).bind(commander_id).run();
   }
 
   // Create deck
   const result = await env.DB.prepare(`
-    INSERT INTO decks (name, commander_card_id, format, description)
+    INSERT INTO decks (name, commander_id, format, description)
     VALUES (?, ?, ?, ?)
   `).bind(
     name,
-    commander_card_id || null,
+    commander_id || null,
     format || 'casual',
     description || null
   ).run();
@@ -225,12 +251,12 @@ addRoute('POST', '/api/decks', async (request, env) => {
   await env.DB.prepare(`
     INSERT INTO deck_owners (deck_id, username, role)
     VALUES (?, ?, 'owner')
-  `).bind(deckId, owner_username).run();
+  `).bind(deckId, owner_username.toLowerCase()).run();
 
-  return jsonResponse({ id: deckId, name, owner: owner_username }, 201);
+  return jsonResponse({ id: deckId, name, owner: owner_username.toLowerCase() }, 201);
 });
 
-// Get deck by ID
+// Get deck by ID (with card list as scryfall_ids)
 addRoute('GET', '/api/decks/:id', async (_request, env, params) => {
   const deckId = parseInt(params.id);
   
@@ -242,12 +268,11 @@ addRoute('GET', '/api/decks/:id', async (_request, env, params) => {
     return jsonResponse({ error: 'Deck not found' }, 404);
   }
 
-  // Get deck cards
+  // Get deck cards (just scryfall_ids and metadata)
   const cards = await env.DB.prepare(`
-    SELECT c.*, dc.quantity, dc.is_sideboard, dc.is_commander
-    FROM deck_cards dc
-    JOIN cards c ON dc.card_id = c.id
-    WHERE dc.deck_id = ?
+    SELECT scryfall_id, quantity, is_sideboard, is_commander
+    FROM deck_cards
+    WHERE deck_id = ?
   `).bind(deckId).all();
 
   // Get deck owners
@@ -265,22 +290,34 @@ addRoute('GET', '/api/decks/:id', async (_request, env, params) => {
 // Update deck
 addRoute('PUT', '/api/decks/:id', async (request, env, params) => {
   const deckId = parseInt(params.id);
-  const { name, commander_card_id, format, description } = 
-    await parseBody<{
-      name?: string;
-      commander_card_id?: number | null;
-      format?: string;
-      description?: string;
-    }>(request);
+  const { name, commander_id, format, description } = await parseBody<{
+    name?: string;
+    commander_id?: string | null;
+    format?: string;
+    description?: string;
+  }>(request);
 
   const updates: string[] = [];
   const values: unknown[] = [];
 
   if (name !== undefined) { updates.push('name = ?'); values.push(name); }
-  if (commander_card_id !== undefined) { updates.push('commander_card_id = ?'); values.push(commander_card_id); }
+  if (commander_id !== undefined) { 
+    updates.push('commander_id = ?'); 
+    values.push(commander_id);
+    // Ensure card reference exists
+    if (commander_id) {
+      await env.DB.prepare(
+        'INSERT OR IGNORE INTO cards (scryfall_id) VALUES (?)'
+      ).bind(commander_id).run();
+    }
+  }
   if (format !== undefined) { updates.push('format = ?'); values.push(format); }
   if (description !== undefined) { updates.push('description = ?'); values.push(description); }
   
+  if (updates.length === 0) {
+    return jsonResponse({ error: 'No updates provided' }, 400);
+  }
+
   updates.push('updated_at = CURRENT_TIMESTAMP');
   values.push(deckId);
 
@@ -303,51 +340,61 @@ addRoute('DELETE', '/api/decks/:id', async (_request, env, params) => {
 // Add card to deck
 addRoute('POST', '/api/decks/:id/cards', async (request, env, params) => {
   const deckId = parseInt(params.id);
-  const { card_id, quantity, is_sideboard, is_commander } = 
-    await parseBody<{
-      card_id: number;
-      quantity?: number;
-      is_sideboard?: boolean;
-      is_commander?: boolean;
-    }>(request);
+  const { scryfall_id, quantity, is_sideboard, is_commander } = await parseBody<{
+    scryfall_id: string;
+    quantity?: number;
+    is_sideboard?: boolean;
+    is_commander?: boolean;
+  }>(request);
+
+  if (!scryfall_id) {
+    return jsonResponse({ error: 'scryfall_id is required' }, 400);
+  }
+
+  // Ensure card reference exists
+  await env.DB.prepare(
+    'INSERT OR IGNORE INTO cards (scryfall_id) VALUES (?)'
+  ).bind(scryfall_id).run();
 
   try {
     await env.DB.prepare(`
-      INSERT INTO deck_cards (deck_id, card_id, quantity, is_sideboard, is_commander)
+      INSERT INTO deck_cards (deck_id, scryfall_id, quantity, is_sideboard, is_commander)
       VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT (deck_id, card_id, is_sideboard) DO UPDATE SET quantity = excluded.quantity
+      ON CONFLICT (deck_id, scryfall_id, is_sideboard) 
+      DO UPDATE SET quantity = excluded.quantity, is_commander = excluded.is_commander
     `).bind(
       deckId,
-      card_id,
+      scryfall_id,
       quantity || 1,
       is_sideboard ? 1 : 0,
       is_commander ? 1 : 0
     ).run();
 
     // Update deck timestamp
-    await env.DB.prepare('UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .bind(deckId).run();
+    await env.DB.prepare(
+      'UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    ).bind(deckId).run();
 
-    return jsonResponse({ deck_id: deckId, card_id, added: true });
+    return jsonResponse({ deck_id: deckId, scryfall_id, added: true });
   } catch (e) {
     return jsonResponse({ error: 'Failed to add card to deck' }, 400);
   }
 });
 
 // Remove card from deck
-addRoute('DELETE', '/api/decks/:id/cards/:cardId', async (request, env, params) => {
+addRoute('DELETE', '/api/decks/:id/cards/:scryfallId', async (request, env, params) => {
   const deckId = parseInt(params.id);
-  const cardId = parseInt(params.cardId);
   const url = new URL(request.url);
   const sideboard = url.searchParams.get('sideboard') === 'true' ? 1 : 0;
 
   await env.DB.prepare(`
-    DELETE FROM deck_cards WHERE deck_id = ? AND card_id = ? AND is_sideboard = ?
-  `).bind(deckId, cardId, sideboard).run();
+    DELETE FROM deck_cards WHERE deck_id = ? AND scryfall_id = ? AND is_sideboard = ?
+  `).bind(deckId, params.scryfallId, sideboard).run();
 
   // Update deck timestamp
-  await env.DB.prepare('UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .bind(deckId).run();
+  await env.DB.prepare(
+    'UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+  ).bind(deckId).run();
 
   return jsonResponse({ deleted: true });
 });
@@ -357,14 +404,23 @@ addRoute('POST', '/api/decks/:id/share', async (request, env, params) => {
   const deckId = parseInt(params.id);
   const { username, role } = await parseBody<{ username: string; role?: string }>(request);
 
+  // Check if user exists
+  const user = await env.DB.prepare(
+    'SELECT username FROM users WHERE username = ?'
+  ).bind(username.toLowerCase()).first();
+
+  if (!user) {
+    return jsonResponse({ error: 'User not found' }, 404);
+  }
+
   try {
     await env.DB.prepare(`
       INSERT INTO deck_owners (deck_id, username, role)
       VALUES (?, ?, ?)
       ON CONFLICT (deck_id, username) DO UPDATE SET role = excluded.role
-    `).bind(deckId, username, role || 'viewer').run();
+    `).bind(deckId, username.toLowerCase(), role || 'viewer').run();
 
-    return jsonResponse({ deck_id: deckId, username, role: role || 'viewer', shared: true });
+    return jsonResponse({ deck_id: deckId, username: username.toLowerCase(), role: role || 'viewer', shared: true });
   } catch (e) {
     return jsonResponse({ error: 'Failed to share deck' }, 400);
   }

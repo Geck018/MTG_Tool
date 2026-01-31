@@ -1,18 +1,18 @@
 /**
  * API Client for MTG Deck Builder
  * Connects to Cloudflare Worker backend
+ * Cards are stored as references (scryfall_id only) - details fetched from Scryfall API
  */
 
 import type { 
-  User, DbCard, Deck, DeckSummary, 
-  UserCollectionCard, UserDeck,
-  CreateCardInput, CreateDeckInput 
+  User, Deck, DeckSummary, UserDeck, UserCard,
+  CreateDeckInput 
 } from '../database/types';
 
 // API base URL - change for production
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 
-class ApiError extends Error {
+export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
     this.name = 'ApiError';
@@ -41,51 +41,61 @@ async function fetchApi<T>(
 }
 
 // ============================================
-// USER API
+// AUTH API
 // ============================================
 
-export const userApi = {
-  create: (username: string) => 
-    fetchApi<User & { created: boolean }>('/api/users', {
+export const authApi = {
+  signup: (username: string, displayName?: string) => 
+    fetchApi<User & { created: boolean }>('/api/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ username, display_name: displayName }),
+    }),
+
+  login: (username: string) => 
+    fetchApi<User>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username }),
     }),
 
+  checkUsername: (username: string) => 
+    fetchApi<{ available: boolean }>(`/api/auth/check/${encodeURIComponent(username)}`),
+};
+
+// ============================================
+// USER API
+// ============================================
+
+export const userApi = {
   get: (username: string) => 
     fetchApi<User>(`/api/users/${encodeURIComponent(username)}`),
 
+  // Returns scryfall_ids with quantities - fetch card details from Scryfall API
   getCollection: (username: string) => 
-    fetchApi<UserCollectionCard[]>(`/api/users/${encodeURIComponent(username)}/collection`),
+    fetchApi<UserCard[]>(`/api/users/${encodeURIComponent(username)}/collection`),
 
   getDecks: (username: string) => 
     fetchApi<UserDeck[]>(`/api/users/${encodeURIComponent(username)}/decks`),
 };
 
 // ============================================
-// CARD API
+// COLLECTION API (User's cards)
 // ============================================
 
-export const cardApi = {
-  create: (card: CreateCardInput) => 
-    fetchApi<{ id: number; name: string }>('/api/cards', {
+export const collectionApi = {
+  addCard: (username: string, scryfallId: string, quantity = 1) => 
+    fetchApi<{ scryfall_id: string; username: string; quantity: number; added: boolean }>('/api/collection/add', {
       method: 'POST',
-      body: JSON.stringify(card),
+      body: JSON.stringify({ username, scryfall_id: scryfallId, quantity }),
     }),
 
-  get: (id: number) => 
-    fetchApi<DbCard>(`/api/cards/${id}`),
-
-  search: (query: string, limit = 50) => 
-    fetchApi<DbCard[]>(`/api/cards?search=${encodeURIComponent(query)}&limit=${limit}`),
-
-  addToCollection: (cardId: number, username: string, quantity = 1) => 
-    fetchApi<{ card_id: number; username: string; added: boolean }>(`/api/cards/${cardId}/owners`, {
-      method: 'POST',
-      body: JSON.stringify({ username, quantity }),
+  updateQuantity: (username: string, scryfallId: string, quantity: number) => 
+    fetchApi<{ scryfall_id: string; quantity?: number; updated?: boolean; removed?: boolean }>('/api/collection/update', {
+      method: 'PUT',
+      body: JSON.stringify({ username, scryfall_id: scryfallId, quantity }),
     }),
 
-  removeFromCollection: (cardId: number, username: string) => 
-    fetchApi<{ deleted: boolean }>(`/api/cards/${cardId}/owners/${encodeURIComponent(username)}`, {
+  removeCard: (username: string, scryfallId: string) => 
+    fetchApi<{ deleted: boolean }>(`/api/collection/${encodeURIComponent(username)}/${encodeURIComponent(scryfallId)}`, {
       method: 'DELETE',
     }),
 };
@@ -94,8 +104,16 @@ export const cardApi = {
 // DECK API
 // ============================================
 
+// Deck cards as returned by API (scryfall_ids only)
+export interface DeckCardRef {
+  scryfall_id: string;
+  quantity: number;
+  is_sideboard: boolean;
+  is_commander: boolean;
+}
+
 export interface DeckWithCards extends DeckSummary {
-  cards: (DbCard & { quantity: number; is_sideboard: boolean; is_commander: boolean })[];
+  cards: DeckCardRef[];
   owners: { username: string; role: string }[];
 }
 
@@ -109,7 +127,7 @@ export const deckApi = {
   get: (id: number) => 
     fetchApi<DeckWithCards>(`/api/decks/${id}`),
 
-  update: (id: number, updates: Partial<Pick<Deck, 'name' | 'commander_card_id' | 'format' | 'description'>>) => 
+  update: (id: number, updates: Partial<Pick<Deck, 'name' | 'commander_id' | 'format' | 'description'>>) => 
     fetchApi<{ id: number; updated: boolean }>(`/api/decks/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
@@ -120,14 +138,14 @@ export const deckApi = {
       method: 'DELETE',
     }),
 
-  addCard: (deckId: number, cardId: number, options: { quantity?: number; is_sideboard?: boolean; is_commander?: boolean } = {}) => 
-    fetchApi<{ deck_id: number; card_id: number; added: boolean }>(`/api/decks/${deckId}/cards`, {
+  addCard: (deckId: number, scryfallId: string, options: { quantity?: number; is_sideboard?: boolean; is_commander?: boolean } = {}) => 
+    fetchApi<{ deck_id: number; scryfall_id: string; added: boolean }>(`/api/decks/${deckId}/cards`, {
       method: 'POST',
-      body: JSON.stringify({ card_id: cardId, ...options }),
+      body: JSON.stringify({ scryfall_id: scryfallId, ...options }),
     }),
 
-  removeCard: (deckId: number, cardId: number, sideboard = false) => 
-    fetchApi<{ deleted: boolean }>(`/api/decks/${deckId}/cards/${cardId}?sideboard=${sideboard}`, {
+  removeCard: (deckId: number, scryfallId: string, sideboard = false) => 
+    fetchApi<{ deleted: boolean }>(`/api/decks/${deckId}/cards/${encodeURIComponent(scryfallId)}?sideboard=${sideboard}`, {
       method: 'DELETE',
     }),
 
@@ -147,8 +165,9 @@ export const healthCheck = () =>
 
 // Export all APIs
 export const api = {
+  auth: authApi,
   users: userApi,
-  cards: cardApi,
+  collection: collectionApi,
   decks: deckApi,
   health: healthCheck,
 };
