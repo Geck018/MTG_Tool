@@ -736,7 +736,7 @@ export class DeckAnalysisService {
 
   private static analyzeCardFit(card: Card, deckCards: Card[]): string | null {
     const deckColors = new Set<string>();
-    deckCards.forEach(c => c.color_identity.forEach(col => deckColors.add(col)));
+    deckCards.forEach(c => (c.color_identity || []).forEach(col => deckColors.add(col)));
     
     // Check color compatibility
     const cardColors = new Set(card.color_identity || []);

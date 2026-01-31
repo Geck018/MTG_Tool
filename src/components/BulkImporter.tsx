@@ -128,8 +128,18 @@ export function BulkImporter({ onCardsImported }: BulkImporterProps) {
       }));
       
       // Merge with existing collection
-      const existing = localStorage.getItem('mtg_bulk_collection');
-      const existingCards: BulkCard[] = existing ? JSON.parse(existing) : [];
+      let existingCards: BulkCard[] = [];
+      try {
+        const existing = localStorage.getItem('mtg_bulk_collection');
+        if (existing) {
+          const parsed = JSON.parse(existing);
+          if (Array.isArray(parsed)) {
+            existingCards = parsed;
+          }
+        }
+      } catch {
+        // Ignore corrupted localStorage data
+      }
       const merged = [...existingCards, ...bulkCards];
       localStorage.setItem('mtg_bulk_collection', JSON.stringify(merged));
       
@@ -168,8 +178,18 @@ export function BulkImporter({ onCardsImported }: BulkImporterProps) {
     }));
     
     // Merge with existing collection
-    const existing = localStorage.getItem('mtg_bulk_collection');
-    const existingCards: BulkCard[] = existing ? JSON.parse(existing) : [];
+    let existingCards: BulkCard[] = [];
+    try {
+      const existing = localStorage.getItem('mtg_bulk_collection');
+      if (existing) {
+        const parsed = JSON.parse(existing);
+        if (Array.isArray(parsed)) {
+          existingCards = parsed;
+        }
+      }
+    } catch {
+      // Ignore corrupted localStorage data
+    }
     const merged = [...existingCards, ...bulkCards];
     localStorage.setItem('mtg_bulk_collection', JSON.stringify(merged));
     

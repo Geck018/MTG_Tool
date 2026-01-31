@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { createWorker } from 'tesseract.js';
 import { ScryfallService } from '../services/scryfall';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +23,15 @@ export function CardScanner({ onCardAdded, onClose }: CardScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
 
   // Start camera
   const startCamera = async () => {

@@ -4,7 +4,9 @@ export class CollectionService {
   static getBulkCollection(): BulkCard[] {
     try {
       const stored = localStorage.getItem('mtg_bulk_collection');
-      return stored ? JSON.parse(stored) : [];
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : [];
     } catch (error) {
       console.error('Error loading bulk collection:', error);
       return [];

@@ -23,6 +23,18 @@ export function CollectionViewer() {
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [viewMode, setViewMode] = useState<ViewMode>('tile');
   const loadingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     loadCollection();
@@ -40,6 +52,32 @@ export function CollectionViewer() {
   const loadCollection = () => {
     const bulkCards = CollectionService.getBulkCollection();
     setCollection(bulkCards.map(card => ({ ...card, loading: false })));
+  };
+
+  const removeFromCollection = (cardToRemove: CollectionCard, removeAll: boolean = false) => {
+    setCollection(prev => {
+      let updated: CollectionCard[];
+      
+      if (removeAll || cardToRemove.quantity <= 1) {
+        // Remove entirely
+        updated = prev.filter(c => 
+          !(c.name === cardToRemove.name && c.set === cardToRemove.set && c.collector_number === cardToRemove.collector_number)
+        );
+      } else {
+        // Decrease quantity by 1
+        updated = prev.map(c => 
+          (c.name === cardToRemove.name && c.set === cardToRemove.set && c.collector_number === cardToRemove.collector_number)
+            ? { ...c, quantity: c.quantity - 1 }
+            : c
+        );
+      }
+      
+      // Save to localStorage
+      const bulkCards = updated.map(({ cardData, loading, failed, ...rest }) => rest);
+      localStorage.setItem('mtg_bulk_collection', JSON.stringify(bulkCards));
+      
+      return updated;
+    });
   };
 
   const loadCardDataBatch = async () => {
@@ -91,13 +129,17 @@ export function CollectionViewer() {
             loadingRef.current = false;
             
             // Check if there are more cards to load and trigger next batch
-            // Skip failed cards
-            const remaining = updated.filter(c => !c.cardData && !c.loading && !c.failed);
-            if (remaining.length > 0) {
-              // Trigger next batch after a short delay
-              setTimeout(() => {
-                loadCardDataBatch();
-              }, 100);
+            // Skip failed cards - only continue if component is still mounted
+            if (mountedRef.current) {
+              const remaining = updated.filter(c => !c.cardData && !c.loading && !c.failed);
+              if (remaining.length > 0) {
+                // Trigger next batch after a short delay
+                timeoutRef.current = setTimeout(() => {
+                  if (mountedRef.current) {
+                    loadCardDataBatch();
+                  }
+                }, 100);
+              }
             }
             
             return updated;
@@ -350,6 +392,24 @@ export function CollectionViewer() {
                             </div>
                           )}
                         </div>
+                        <div className="tile-actions">
+                          <button
+                            className="tile-remove-btn"
+                            onClick={(e) => { e.stopPropagation(); removeFromCollection(bulkCard, false); }}
+                            title="Remove 1"
+                          >
+                            −
+                          </button>
+                          {bulkCard.quantity > 1 && (
+                            <button
+                              className="tile-remove-all-btn"
+                              onClick={(e) => { e.stopPropagation(); removeFromCollection(bulkCard, true); }}
+                              title="Remove all"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -396,6 +456,24 @@ export function CollectionViewer() {
                       </div>
                     </div>
                     <div className="collection-item-quantity">×{bulkCard.quantity}</div>
+                    <div className="collection-item-actions">
+                      <button
+                        className="item-remove-btn"
+                        onClick={(e) => { e.stopPropagation(); removeFromCollection(bulkCard, false); }}
+                        title="Remove 1"
+                      >
+                        −
+                      </button>
+                      {bulkCard.quantity > 1 && (
+                        <button
+                          className="item-remove-all-btn"
+                          onClick={(e) => { e.stopPropagation(); removeFromCollection(bulkCard, true); }}
+                          title="Remove all"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))
               )}
