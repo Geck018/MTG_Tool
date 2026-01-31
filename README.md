@@ -1,39 +1,60 @@
-# MTG Deck Builder
+# Tabletop Tools - MTG Deck Builder
 
-A locally hosted Magic: The Gathering deck builder application with live card data from Scryfall API, comprehensive keyword analysis, and CSV import/export functionality.
+**Live at: [tabletoptools.cc](https://tabletoptools.cc)**
+
+A feature-rich Magic: The Gathering deck builder with live card data from Scryfall API, deck analysis, synergy detection, win condition analysis, and collection management.
 
 ## Features
 
-- 🎴 **Live Card Data**: Fetches real-time card information from Scryfall API
-- 📊 **Deck Building**: Build and manage your decks with main deck and sideboard support
-- 📥 **CSV Import**: Import bulk card collections or prebuilt decks from CSV files
-- 📤 **CSV Export**: Export decks to CSV format compatible with tools like MythicTools
-- ✅ **Deck Validation**: Validate decks for different formats (Standard, Modern, Legacy, etc.)
-- 🔍 **Keyword Analysis**: Analyze keywords in your deck using Comprehensive Rules
-- 📜 **Card Rulings**: View official rulings for each card
-- ⚡ **Combo Suggestions**: Get suggested card interactions and synergies
-- 💾 **No Database**: All data stored locally in browser (localStorage)
-- 🎨 **Modern UI**: Beautiful, responsive dark theme interface
+### Core Features
+- 🎴 **Live Card Data**: Real-time card information from Scryfall API
+- 📊 **Deck Building**: Build decks with main deck, sideboard, and wishlist support
+- 📥 **Import**: Import bulk collections or prebuilt decks (CSV/text)
+- 📤 **Export**: Export decks to CSV format (MythicTools compatible)
+- 💾 **Local Storage**: All data stored in browser - no account needed
+
+### Deck Generation
+- ⚡ **Auto Deck Generation**: Generate decks from your collection by mechanic
+- 👑 **Commander Deck Builder**: Build 100-card Commander decks with synergy analysis
+- 🎯 **Strategy Suggestions**: Get recommended cards for your strategy
+
+### Analysis Tools
+- 🔍 **Deck Analysis**: Full deck breakdown with:
+  - ✅ Format legality checking (Standard, Modern, Pioneer, Legacy, Vintage, Commander)
+  - 🔗 Synergy detection between cards
+  - 📝 Strategy writeup and archetype detection
+  - 🏆 **Win Condition Analysis** - How to play your deck to win
+  - 📈 Mana curve visualization
+  - 💡 Collection-based improvement suggestions
+  - 🛒 Purchase recommendations with price estimates
+
+### Collection Management
+- 📚 **Bulk Import**: Import your collection from CSV
+- 🔄 **Auto-Consume**: Optionally remove cards from collection when building decks
+- ❤️ **Wishlist**: Track cards you want to acquire
+- 🔍 **Missing Cards**: See what you need to complete a deck
+
+### Card Information
+- 📜 **Official Rulings**: View rulings from Scryfall
+- 🔗 **Combo Suggestions**: Get synergy recommendations
+- 📖 **Keyword Definitions**: Comprehensive Rules keyword explanations
 
 ## Getting Started
 
 ### Prerequisites
-
 - Node.js 18+ and npm
 
 ### Installation
 
-1. Install dependencies:
 ```bash
+# Install dependencies
 npm install
-```
 
-2. Start the development server:
-```bash
+# Start development server
 npm run dev
-```
 
-3. Open your browser to `http://localhost:3000`
+# Open http://localhost:3000
+```
 
 ### Building for Production
 
@@ -41,125 +62,76 @@ npm run dev
 npm run build
 ```
 
-The built files will be in the `dist` directory, ready for deployment to Cloudflare Pages or any static hosting service.
+Built files output to `dist/` directory.
 
-## Deployment to Cloudflare Pages
+## Deployment
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
+Deployed on **Cloudflare Pages** at [tabletoptools.cc](https://tabletoptools.cc)
 
-**Quick deploy:**
-1. Build: `npm run build`
-2. Deploy via Cloudflare Dashboard or Wrangler CLI:
-   ```bash
-   wrangler pages deploy dist --project-name=mtg-deckbuilder
-   ```
+See [CUSTOM_DOMAIN_SETUP.md](./CUSTOM_DOMAIN_SETUP.md) for domain configuration.
 
-## Usage
+## Usage Guide
 
 ### Building a Deck
+1. **Search Cards** tab: Find cards and add to deck
+2. **Build Deck** tab: Manage quantities, move to sideboard
+3. **Validate** tab: Check format legality
+4. **Export**: Download as CSV
 
-1. Navigate to the "Build Deck" tab
-2. Search for cards using the search bar
-3. Click on a card to add it to your deck, or click "View Details" for full card information
-4. Adjust quantities using the +/- buttons
-5. Move cards between main deck and sideboard using the arrow buttons
-
-### Viewing Card Details
-
-1. Search for a card
-2. Click "View Details" on any card result
-3. View:
-   - Full card image and information
-   - Official rulings from Scryfall
-   - Combo suggestions and synergies
-   - Keyword definitions
-
-### Importing Bulk Cards
-
-1. Go to the "Import Bulk" tab
-2. Upload a CSV file or paste CSV data
+### Importing Your Collection
+1. Go to **Import Bulk** tab
+2. Upload CSV or paste data
 3. Format: `Name,Quantity,Set,Collector Number`
-4. Example:
-```csv
-Name,Quantity,Set,Collector Number
-Lightning Bolt,4,LEB,161
-Island,20,LEB,234
-```
 
-### Importing a Deck
+### Analyzing a Deck
+1. Go to **Deck Analysis** tab
+2. Paste or upload a deck list
+3. Select format and click **Analyze**
+4. Review:
+   - Legality status
+   - Win conditions and gameplan
+   - Synergies between cards
+   - Strategy and archetype
+   - Improvement suggestions
 
-1. Go to the "Import Deck" tab
-2. Upload a deck file or paste a deck list
-3. Supported formats:
-   - Text format: `2 Lightning Bolt`
-   - CSV format: `Name,Quantity`
+### Generating a Deck
+1. **Generate Deck** tab: Build from collection by mechanic
+2. **Commander Deck** tab: Build 100-card EDH decks
+3. Select strategy/mechanic and format
+4. Review generated deck and suggestions
 
-### Validating Your Deck
+## CSV Formats
 
-1. Go to the "Validate" tab
-2. Select your format (Standard, Modern, etc.)
-3. Review errors, warnings, and suggestions
-
-### Exporting Your Deck
-
-Click the "Export CSV" button in the header to download your deck as a CSV file compatible with MythicTools and other deck management tools.
-
-## CSV Format
-
-### Export Format (MythicTools Compatible)
-
+### Export Format
 ```csv
 Name,Quantity,Set,Collector Number,CMC,Type,Colors
 "Lightning Bolt",4,LEB,161,1,"Instant",R
-"Island",20,LEB,234,0,"Basic Land — Island",U
 ```
 
 ### Import Format
-
 ```csv
 Name,Quantity,Set,Collector Number
 Lightning Bolt,4,LEB,161
-Island,20,LEB,234
 ```
 
-## Features in Detail
+### Deck List Format (Text)
+```
+4 Lightning Bolt
+4 Monastery Swiftspear
+20 Mountain
 
-### Scryfall API Integration
+Sideboard:
+2 Searing Blood
+```
 
-- Real-time card search
-- Card images and pricing
-- Format legality checking
-- Set information
-- Official card rulings
+## Tech Stack
 
-### Keyword Analysis
-
-Based on Magic: The Gathering Comprehensive Rules, the app analyzes:
-- Flying, Trample, Haste, Vigilance
-- First Strike, Double Strike
-- Deathtouch, Lifelink
-- Hexproof, Shroud, Indestructible
-- Flash, Menace, Ward
-- And more...
-
-### Combo Suggestions
-
-The app analyzes your deck to suggest:
-- Draw synergies
-- Sacrifice combos
-- Mana ramp interactions
-- Creature type synergies
-- Color synergies
-
-### Deck Validation
-
-Validates:
-- Deck size (minimum 60 cards)
-- Sideboard size (maximum 15 cards)
-- 4-of limit (except basic lands)
-- Format legality
-- Mana curve analysis
-- Color distribution
+- **Frontend**: React 18 + TypeScript
+- **Build**: Vite 5
+- **Styling**: CSS with custom dark theme
+- **API**: Scryfall (public, no auth required)
+- **Storage**: Browser localStorage
+- **Hosting**: Cloudflare Pages
 
 ## License
 

@@ -11,6 +11,7 @@ import { CollectionViewer } from './components/CollectionViewer';
 import { CardDetail } from './components/CardDetail';
 import { DeckGenerator } from './components/DeckGenerator';
 import { CommanderDeckGenerator } from './components/CommanderDeckGenerator';
+import { DeckAnalysis } from './components/DeckAnalysis';
 import { ScryfallService } from './services/scryfall';
 import { MECHANICS, FORMATS } from './services/deckGenerator';
 import type { Card } from './types';
@@ -20,7 +21,7 @@ import './App.css';
 
 function App() {
   const { deck, addCard, removeCard, updateQuantity, moveCard, toggleWishlist, removeFromWishlist, updateWishlistQuantity, clearDeck, setDeckName } = useDeck();
-  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'generate' | 'commander' | 'import' | 'validate' | 'keywords'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'generate' | 'commander' | 'import' | 'validate' | 'keywords' | 'analysis'>('search');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [collectionUpdateKey, setCollectionUpdateKey] = useState(0);
 
@@ -60,7 +61,7 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🎴 MTG Deck Builder</h1>
+        <h1>🎴 Tabletop Tools - MTG Deck Builder</h1>
         <div className="header-actions">
           <input
             type="text"
@@ -133,6 +134,12 @@ function App() {
           onClick={() => setActiveTab('keywords')}
         >
           Keywords
+        </button>
+        <button
+          className={activeTab === 'analysis' ? 'active' : ''}
+          onClick={() => setActiveTab('analysis')}
+        >
+          Deck Analysis
         </button>
       </nav>
 
@@ -265,6 +272,16 @@ function App() {
 
         {activeTab === 'keywords' && (
           <KeywordAnalyzer deck={deck} />
+        )}
+
+        {activeTab === 'analysis' && (
+          <DeckAnalysis onDeckAnalyzed={(importedDeck) => {
+            // Optionally load the analyzed deck into the builder
+            // clearDeck();
+            // importedDeck.cards.forEach(dc => addCard(dc.card, dc.quantity, false));
+            // importedDeck.sideboard.forEach(dc => addCard(dc.card, dc.quantity, true));
+            // setDeckName(importedDeck.name);
+          }} />
         )}
       </main>
     </div>

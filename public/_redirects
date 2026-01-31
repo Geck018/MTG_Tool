@@ -1,4 +1,8 @@
 # Cloudflare Pages SPA redirect rules
-# This ensures React Router (if added) works correctly
+# Domain: tabletoptools.cc
 
+# Redirect www to non-www
+https://www.tabletoptools.cc/*  https://tabletoptools.cc/:splat  301
+
+# SPA fallback - ensures React Router works correctly
 /*    /index.html   200

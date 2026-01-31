@@ -1,0 +1,6 @@
+# Robots.txt for tabletoptools.cc
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://tabletoptools.cc/sitemap.xml
