@@ -9,6 +9,75 @@ import {
 } from '../services/rules/rulesChat';
 import type { Rule } from '../services/rules/mtgRules';
 
+// Simple markdown parser for chat messages
+function renderMarkdown(text: string): JSX.Element[] {
+  const lines = text.split('\n');
+  const elements: JSX.Element[] = [];
+  
+  lines.forEach((line, lineIndex) => {
+    // Parse inline elements
+    const parseInline = (str: string): (string | JSX.Element)[] => {
+      const parts: (string | JSX.Element)[] = [];
+      let remaining = str;
+      let keyCounter = 0;
+      
+      while (remaining.length > 0) {
+        // Bold: **text**
+        const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+        if (boldMatch && boldMatch.index !== undefined) {
+          if (boldMatch.index > 0) {
+            parts.push(remaining.slice(0, boldMatch.index));
+          }
+          parts.push(<strong key={`b-${lineIndex}-${keyCounter++}`}>{boldMatch[1]}</strong>);
+          remaining = remaining.slice(boldMatch.index + boldMatch[0].length);
+          continue;
+        }
+        
+        // Italic: *text*
+        const italicMatch = remaining.match(/\*(.+?)\*/);
+        if (italicMatch && italicMatch.index !== undefined) {
+          if (italicMatch.index > 0) {
+            parts.push(remaining.slice(0, italicMatch.index));
+          }
+          parts.push(<em key={`i-${lineIndex}-${keyCounter++}`}>{italicMatch[1]}</em>);
+          remaining = remaining.slice(italicMatch.index + italicMatch[0].length);
+          continue;
+        }
+        
+        // No more matches
+        parts.push(remaining);
+        break;
+      }
+      
+      return parts;
+    };
+    
+    // Handle bullet points
+    if (line.trim().startsWith('• ') || line.trim().startsWith('- ')) {
+      const content = line.trim().slice(2);
+      elements.push(
+        <p key={lineIndex} className="md-bullet">
+          <span className="bullet">•</span> {parseInline(content)}
+        </p>
+      );
+    }
+    // Handle horizontal rule
+    else if (line.trim() === '---') {
+      elements.push(<hr key={lineIndex} className="md-hr" />);
+    }
+    // Empty line = spacing
+    else if (line.trim() === '') {
+      elements.push(<p key={lineIndex} className="md-spacer">&nbsp;</p>);
+    }
+    // Regular paragraph
+    else {
+      elements.push(<p key={lineIndex}>{parseInline(line)}</p>);
+    }
+  });
+  
+  return elements;
+}
+
 interface RulesChatProps {
   gameSystem?: GameSystem;
   onBack?: () => void;
@@ -151,9 +220,7 @@ export function RulesChat({ gameSystem = 'mtg', onBack }: RulesChatProps) {
             </div>
             <div className="message-content">
               <div className="message-text">
-                {message.content.split('\n').map((line, i) => (
-                  <p key={i}>{line}</p>
-                ))}
+                {renderMarkdown(message.content)}
               </div>
               
               {message.rules && message.rules.length > 0 && (

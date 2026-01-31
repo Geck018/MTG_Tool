@@ -10,60 +10,122 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-interface QuestionPattern {
-  patterns: RegExp[];
-  keywords: string[];
-  response: (matches: RegExpMatchArray | null, query: string) => string;
-}
+// Pre-written explanations for common topics - these provide actual answers, not just rule citations
+const TOPIC_EXPLANATIONS: { [key: string]: string } = {
+  // Keywords
+  'trample': `**Trample** lets your creature deal excess combat damage to the defending player or planeswalker.\n\nHere's how it works: When your trampling creature is blocked, you first assign lethal damage to each blocker (at least equal to their toughness). Any leftover damage "tramples over" to the original target.\n\n**Example:** Your 7/7 with trample is blocked by a 2/2. You assign 2 damage to kill the blocker, and the remaining 5 damage hits your opponent.`,
+  
+  'flying': `**Flying** is an evasion ability that makes a creature harder to block.\n\nCreatures with flying can only be blocked by other creatures with flying OR creatures with reach. However, a flying creature can block both flying and non-flying attackers.\n\n**Tip:** Flying is one of the strongest combat keywords because it often lets your creatures attack uncontested.`,
+  
+  'deathtouch': `**Deathtouch** means any amount of damage this creature deals to another creature is lethal.\n\nEven 1 damage from a deathtouch creature will destroy any creature, regardless of toughness. This makes deathtouch creatures excellent blockers - opponents often won't want to trade their big creature for your small deathtouch creature.\n\n**Pro tip:** Deathtouch + trample is a powerful combo. You only need to assign 1 damage to each blocker (since it's lethal), and the rest tramples through!`,
+  
+  'first strike': `**First Strike** lets a creature deal its combat damage before creatures without first strike.\n\nIn combat, first strike creatures deal damage in an earlier damage step. If a first striker kills its opponent before regular damage, that creature won't deal damage back.\n\n**Example:** Your 2/2 first strike blocks their 3/2. Your creature deals 2 damage first, killing their creature. Their creature never gets to hit back!`,
+  
+  'double strike': `**Double Strike** means a creature deals combat damage twice - once during first strike and once during regular combat damage.\n\nThis effectively doubles the creature's damage output in combat. A 3/3 with double strike deals 6 total combat damage!\n\n**Note:** Double strike includes first strike, so your creature will kill normal creatures before they can hit back, AND deal damage again in the regular step.`,
+  
+  'hexproof': `**Hexproof** protects a permanent from your opponents' targeted spells and abilities.\n\nYour opponents cannot target a hexproof creature with removal like "destroy target creature" or effects like "exile target permanent." However, YOU can still target your own hexproof creatures with beneficial effects.\n\n**Important:** Hexproof doesn't protect against non-targeted effects like "destroy all creatures" or "each player sacrifices a creature."`,
+  
+  'indestructible': `**Indestructible** means a permanent cannot be destroyed by damage or "destroy" effects.\n\nIndestructible creatures survive lethal damage and effects that say "destroy." However, they CAN still be:\n• Exiled\n• Sacrificed\n• Returned to hand/library\n• Given -X/-X until toughness reaches 0\n\n**Remember:** Indestructible prevents destruction, not removal in general.`,
+  
+  'lifelink': `**Lifelink** causes you to gain life equal to the damage dealt by that creature.\n\nWhenever a creature with lifelink deals damage (combat or otherwise), you gain that much life. This happens simultaneously with the damage.\n\n**Example:** Your 4/4 lifelink attacks and isn't blocked. You deal 4 damage AND gain 4 life. If it had been blocked by a 2/2, you'd still gain 4 life (the damage it dealt).`,
+  
+  'vigilance': `**Vigilance** means a creature doesn't tap when it attacks.\n\nNormally, attacking creatures tap, leaving them unable to block on your opponent's turn. Vigilance lets you attack AND keep the creature untapped to block, activate tap abilities, or just look threatening.\n\n**This is great for:** Defensive creatures, creatures with tap abilities, and maintaining board presence.`,
+  
+  'haste': `**Haste** lets a creature attack and use tap abilities immediately, ignoring summoning sickness.\n\nNormally, creatures can't attack or tap the turn they enter the battlefield. Haste bypasses this restriction, letting you be aggressive right away.\n\n**Common on:** Red creatures, which emphasize speed and aggression.`,
+  
+  'flash': `**Flash** lets you cast a spell any time you could cast an instant.\n\nThis means you can cast creatures, enchantments, or artifacts during your opponent's turn or in response to spells. Flash creates surprise blockers, lets you hold up mana for responses, and keeps opponents guessing.\n\n**Pro tip:** Hold flash creatures until the last moment - either as surprise blockers or cast at end of opponent's turn to dodge sorcery-speed removal.`,
+  
+  'menace': `**Menace** requires at least two creatures to block this attacker.\n\nA single creature cannot block a creature with menace, no matter how big it is. This makes menace great for getting damage through when opponents have limited blockers.\n\n**Note:** The blockers don't need to be able to kill it - just having two creatures satisfies the requirement.`,
+  
+  'reach': `**Reach** lets a creature block creatures with flying.\n\nNormally, only flying creatures can block flyers. Reach gives ground-based creatures the ability to swat down aerial threats. Reach does NOT give flying - a creature with reach still can't fly over blockers.\n\n**Thematically:** Usually on archers, spiders, and tall creatures.`,
+  
+  'ward': `**Ward** is a triggered ability that counters spells/abilities targeting the permanent unless the opponent pays a cost.\n\nWhen an opponent targets your creature with ward, they must pay the ward cost (often mana or life) or the spell/ability is countered. This protects against targeted removal while still being beatable.\n\n**Note:** Ward triggers each time the permanent is targeted, even multiple times per turn.`,
+  
+  'prowess': `**Prowess** triggers whenever you cast a noncreature spell, giving the creature +1/+1 until end of turn.\n\nEach noncreature spell you cast triggers prowess separately. Cast 3 instants? That's +3/+3! This rewards spell-heavy decks and makes combat math tricky for opponents.\n\n**Best with:** Cheap cantrips, instants, and sorceries that let you chain multiple spells.`,
+  
+  // Game concepts
+  'summoning sickness': `**Summoning Sickness** prevents creatures from attacking or using tap abilities the turn they enter the battlefield.\n\nA creature has summoning sickness until it has been continuously under your control since the start of your most recent turn. This means:\n• Can't attack\n• Can't use abilities with the tap symbol\n• CAN still block\n• CAN use abilities without the tap symbol\n\n**Haste** bypasses summoning sickness entirely.`,
+  
+  'stack': `**The Stack** is where spells and abilities wait to resolve. It works on a "last in, first out" basis.\n\nWhen you cast a spell, it goes on the stack. Before it resolves, opponents can respond with their own spells/abilities, which go on TOP of the stack. The top item always resolves first.\n\n**Example:**\n1. You cast Lightning Bolt targeting a creature\n2. Opponent casts Giant Growth on that creature (goes on top)\n3. Giant Growth resolves first (+3/+3)\n4. Then Lightning Bolt resolves (3 damage to now-bigger creature)\n\nThis is why "in response" is so important in Magic!`,
+  
+  'priority': `**Priority** determines when players can take actions.\n\nThe active player (whose turn it is) gets priority first. After casting a spell or activating an ability, priority passes around the table. When all players pass priority in succession without doing anything, the top item on the stack resolves.\n\n**Key points:**\n• You can't cast spells without priority\n• Passing priority doesn't skip your turn\n• Both players must pass for anything to resolve`,
+  
+  'state-based actions': `**State-Based Actions** are game rules that are automatically checked and applied whenever a player would receive priority.\n\nCommon state-based actions:\n• Creature with 0 or less toughness dies\n• Player with 0 or less life loses\n• Player with 10+ poison counters loses\n• Legendary rule (choose one if you control two with same name)\n• Aura not attached to legal permanent goes to graveyard\n\n**Important:** These happen automatically - no one "does" them, they just happen.`,
+  
+  'legendary rule': `**The Legendary Rule** prevents you from controlling multiple legendary permanents with the same name.\n\nIf you control two or more legendary permanents with the same name, you must immediately choose one to keep and put the rest into their owners' graveyards. This is a state-based action.\n\n**Note:** This only affects YOUR permanents. Your opponent can have their own copy of the same legendary.`,
+  
+  // Zones
+  'graveyard': `**The Graveyard** is your discard pile where cards go when destroyed, discarded, or after spells resolve.\n\nCards in the graveyard are public information - anyone can look through it. Many cards interact with the graveyard:\n• Reanimation effects bring creatures back\n• Flashback lets you cast spells from the graveyard\n• Some cards get stronger based on graveyard size\n\n**"Dies"** specifically means going from battlefield to graveyard (not exile or other zones).`,
+  
+  'exile': `**Exile** is a zone where cards are removed from the normal game.\n\nExiled cards are generally gone for good - most effects can't bring them back. However, some cards exile things temporarily with a return condition.\n\n**Key difference from graveyard:** Exile dodges graveyard recursion, so it's a more permanent answer to threats.`,
+  
+  'battlefield': `**The Battlefield** is the shared zone where permanents exist during the game.\n\nCreatures, lands, artifacts, enchantments, and planeswalkers are all permanents that stay on the battlefield. Instants and sorceries never enter the battlefield - they resolve and go to the graveyard.\n\n**"Enters the battlefield" (ETB)** effects trigger when a permanent moves to this zone.`,
+  
+  // Turn structure
+  'phases': `**Turn Structure** - Each turn has these phases in order:\n\n**1. Beginning Phase**\n   • Untap (untap your stuff, no spells allowed)\n   • Upkeep (triggers happen)\n   • Draw (draw a card)\n\n**2. First Main Phase** - Play lands, cast spells\n\n**3. Combat Phase** - Attack!\n\n**4. Second Main Phase** - Play lands, cast more spells\n\n**5. Ending Phase**\n   • End step (triggers)\n   • Cleanup (discard to 7, damage wears off)`,
+  
+  'combat': `**Combat** happens during the combat phase and has five steps:\n\n**1. Beginning of Combat** - Last chance to tap attackers\n\n**2. Declare Attackers** - Choose which creatures attack and what they're attacking\n\n**3. Declare Blockers** - Defending player assigns blockers\n\n**4. Combat Damage** - Creatures deal damage equal to their power\n\n**5. End of Combat** - Combat ends, creatures are still "attacking/blocking" until step ends\n\n**Remember:** Attacking taps the creature (unless it has vigilance).`,
+  
+  // Card types
+  'instant': `**Instants** are spells you can cast at almost any time - during your turn, your opponent's turn, or in response to other spells.\n\nThis flexibility is their main advantage. Hold up mana to represent a possible instant, then cast it when most impactful (or cast something else if they don't give you a good target).\n\n**Common instant effects:** Removal, counterspells, combat tricks, card draw`,
+  
+  'sorcery': `**Sorceries** are spells that can only be cast during your main phase when the stack is empty.\n\nThis "sorcery speed" restriction means opponents can respond but you can't cast them reactively. In exchange, sorceries often have stronger effects than similarly-costed instants.\n\n**Examples:** Board wipes, big card draw, tutors`,
+  
+  'planeswalker': `**Planeswalkers** are powerful permanents that act like allies fighting alongside you.\n\nKey rules:\n• Enter with loyalty counters (the number in bottom right)\n• Can activate ONE loyalty ability per turn (on your turn, sorcery speed)\n• +X abilities add loyalty, -X abilities cost loyalty\n• Opponents can attack planeswalkers instead of you\n• Damage to planeswalkers removes that many loyalty counters\n• 0 loyalty = planeswalker dies`,
+  
+  // Common questions  
+  'land per turn': `You can normally play **one land per turn**, during either of your main phases.\n\nPlaying a land is a special action that doesn't use the stack and can't be responded to. Some cards let you play additional lands.\n\n**Remember:** Playing a land is different from casting a spell - land plays don't trigger prowess and can't be countered.`,
+  
+  'win the game': `**Ways to Win:**\n\n• **Reduce opponent to 0 life** - Most common\n• **Opponent draws from empty library** - "Mill" or "decking"\n• **Opponent has 10+ poison counters** - Infect strategy\n• **Card says "you win"** - Alternative win conditions\n• **Commander damage** - 21 combat damage from a single commander\n\n**You also win if all opponents have lost!**`,
+  
+  'commander': `**Commander (EDH)** is a popular multiplayer format:\n\n• **100-card singleton deck** (only 1 copy of each card, except basic lands)\n• **Legendary creature as commander** (starts in command zone)\n• **Color identity** - Only cards matching commander's colors allowed\n• **40 starting life**\n• **Commander damage** - 21 combat damage from one commander = loss\n• **Command zone tax** - Costs 2 more each time cast from command zone`,
+};
 
-// Common question patterns for natural language understanding
-const QUESTION_PATTERNS: QuestionPattern[] = [
-  {
-    patterns: [
-      /what\s+(?:is|are|does)\s+(.+)/i,
-      /explain\s+(.+)/i,
-      /define\s+(.+)/i,
-      /how\s+does\s+(.+)\s+work/i,
-    ],
-    keywords: [],
-    response: (matches, query) => {
-      const topic = matches?.[1]?.trim() || query;
-      return `Here's what I found about "${topic}":`;
+// Generate explanation by finding relevant topic
+function findTopicExplanation(query: string): string | null {
+  const queryLower = query.toLowerCase();
+  
+  // Direct topic matches
+  for (const [topic, explanation] of Object.entries(TOPIC_EXPLANATIONS)) {
+    if (queryLower.includes(topic)) {
+      return explanation;
     }
-  },
-  {
-    patterns: [
-      /can\s+(?:i|you|a player)\s+(.+)/i,
-      /is\s+it\s+(?:possible|legal)\s+to\s+(.+)/i,
-    ],
-    keywords: [],
-    response: (matches, query) => {
-      return `Regarding "${matches?.[1]?.trim() || query}":`;
+  }
+  
+  // Keyword variations
+  const variations: { [key: string]: string } = {
+    'first-strike': 'first strike',
+    'firststrike': 'first strike',
+    'double-strike': 'double strike',
+    'doublestrike': 'double strike',
+    'death touch': 'deathtouch',
+    'death-touch': 'deathtouch',
+    'life link': 'lifelink',
+    'life-link': 'lifelink',
+    'state based': 'state-based actions',
+    'sba': 'state-based actions',
+    'etb': 'battlefield',
+    'enters the battlefield': 'battlefield',
+    'turn order': 'phases',
+    'turn structure': 'phases',
+    'phase': 'phases',
+    'edh': 'commander',
+    'how do i win': 'win the game',
+    'how to win': 'win the game',
+    'winning': 'win the game',
+    'how many land': 'land per turn',
+    'lands per turn': 'land per turn',
+    'play land': 'land per turn',
+  };
+  
+  for (const [variant, topic] of Object.entries(variations)) {
+    if (queryLower.includes(variant) && TOPIC_EXPLANATIONS[topic]) {
+      return TOPIC_EXPLANATIONS[topic];
     }
-  },
-  {
-    patterns: [
-      /when\s+(?:can|do|does)\s+(.+)/i,
-      /what\s+happens\s+(?:when|if)\s+(.+)/i,
-    ],
-    keywords: [],
-    response: () => `Here are the relevant rules:`
-  },
-  {
-    patterns: [
-      /how\s+(?:many|much)\s+(.+)/i,
-    ],
-    keywords: [],
-    response: () => `Here's the information:`
-  },
-  {
-    patterns: [
-      /difference\s+between\s+(.+)\s+and\s+(.+)/i,
-    ],
-    keywords: [],
-    response: (matches) => `Comparing ${matches?.[1]} and ${matches?.[2]}:`
-  },
-];
+  }
+  
+  return null;
+}
 
 // Keyword synonyms for better matching
 const KEYWORD_SYNONYMS: { [key: string]: string[] } = {
@@ -136,28 +198,30 @@ function extractKeyTerms(query: string): string[] {
 }
 
 // Generate a helpful response based on the query and found rules
-function generateResponse(query: string, rules: Rule[], gameSystem: GameSystem): string {
-  if (rules.length === 0) {
-    return getNoResultsResponse(query, gameSystem);
+function generateResponse(query: string, rules: Rule[], _gameSystem: GameSystem): string {
+  // First, try to find a pre-written explanation for this topic
+  const topicExplanation = findTopicExplanation(query);
+  if (topicExplanation) {
+    return topicExplanation;
   }
   
-  // Check for pattern matches
-  for (const pattern of QUESTION_PATTERNS) {
-    for (const regex of pattern.patterns) {
-      const match = query.match(regex);
-      if (match) {
-        return pattern.response(match, query);
-      }
+  // If we have rules but no explanation, synthesize one from the best matching rule
+  if (rules.length > 0) {
+    const bestRule = rules[0];
+    
+    // Create a natural explanation from the rule
+    let explanation = `**${bestRule.title}**\n\n${bestRule.text}`;
+    
+    // Add context if we have multiple related rules
+    if (rules.length > 1) {
+      explanation += `\n\n---\n*See the related rules below for more details.*`;
     }
+    
+    return explanation;
   }
   
-  // Default response
-  const keyTerms = extractKeyTerms(query);
-  if (keyTerms.length > 0) {
-    return `Here's what I found about "${keyTerms.slice(0, 3).join(', ')}":`;
-  }
-  
-  return "Here are the relevant rules:";
+  // No explanation and no rules found
+  return getNoResultsResponse(query, _gameSystem);
 }
 
 function getNoResultsResponse(query: string, gameSystem: GameSystem): string {
@@ -267,24 +331,32 @@ export function getRulesByCategory(category: string, gameSystem: GameSystem = 'm
   return [];
 }
 
-// Quick answers for common questions
+// Quick answers for common questions - these bypass the full search
 export function getQuickAnswer(query: string): string | null {
   const q = query.toLowerCase().trim();
   
   const quickAnswers: { [key: string]: string } = {
-    'how many cards in a deck': 'A standard Magic deck must have at least 60 cards. Commander decks have exactly 100 cards.',
-    'how many lands': 'Most 60-card decks run 20-26 lands. A common starting point is 24 lands (40% of deck).',
-    'starting life': 'Players start with 20 life in most formats. Commander starts with 40 life.',
-    'hand size': 'You draw 7 cards at the start. Maximum hand size is 7 (discard at end of turn if over).',
-    'how many copies': 'You can have up to 4 copies of any card except basic lands. Commander is singleton (1 copy each).',
-    'what is edh': 'EDH (Elder Dragon Highlander) is another name for Commander format.',
-    'what is commander': 'Commander is a 100-card singleton format with a legendary creature as your commander.',
+    'how many cards in a deck': '**Deck Size:**\n\n• **Standard/Modern/etc:** Minimum 60 cards (no maximum)\n• **Commander/EDH:** Exactly 100 cards\n• **Limited (Draft/Sealed):** Minimum 40 cards\n\n**Tip:** Stick close to the minimum for consistency.',
+    
+    'how many lands': '**Recommended Land Count:**\n\n• **60-card decks:** 20-26 lands (24 is a common starting point)\n• **40-card limited:** 16-18 lands\n• **Commander:** 35-40 lands\n\nAdjust based on your mana curve and mana-producing cards.',
+    
+    'starting life': '**Starting Life Totals:**\n\n• **Standard/Modern/Legacy/Vintage:** 20 life\n• **Commander:** 40 life\n• **Two-Headed Giant:** 30 life (shared)\n• **Brawl:** 25 life',
+    
+    'hand size': '**Hand Size Rules:**\n\n• Draw **7 cards** at game start\n• Maximum hand size is **7** (discard down during cleanup)\n• Going second? You may take a free mulligan\n• Some cards can change your maximum hand size',
+    
+    'how many copies': '**Copy Limits:**\n\n• **Standard formats:** Up to 4 copies of any card\n• **Basic lands:** Unlimited copies allowed\n• **Commander:** Only 1 copy of each card (singleton)\n• **Relentless Rats/etc:** Cards that say "any number" override the limit',
   };
   
   for (const [key, answer] of Object.entries(quickAnswers)) {
     if (q.includes(key)) {
       return answer;
     }
+  }
+  
+  // Check for topic explanations as quick answers
+  const topicAnswer = findTopicExplanation(query);
+  if (topicAnswer) {
+    return topicAnswer;
   }
   
   return null;
