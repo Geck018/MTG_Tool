@@ -12,6 +12,7 @@ import { CardDetail } from './CardDetail';
 import { DeckGenerator } from './DeckGenerator';
 import { CommanderDeckGenerator } from './CommanderDeckGenerator';
 import { DeckAnalysis } from './DeckAnalysis';
+import { CardScanner } from './CardScanner';
 import { ScryfallService } from '../services/scryfall';
 import { MECHANICS, FORMATS } from '../services/deckGenerator';
 import type { Card } from '../types';
@@ -27,6 +28,7 @@ export function MTGApp({ onBack }: MTGAppProps) {
   const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'generate' | 'commander' | 'import' | 'validate' | 'keywords' | 'analysis'>('search');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [collectionUpdateKey, setCollectionUpdateKey] = useState(0);
+  const [showScanner, setShowScanner] = useState(false);
 
   // Handle URL routing for card details
   useEffect(() => {
@@ -69,6 +71,9 @@ export function MTGApp({ onBack }: MTGAppProps) {
           <h1>🎴 MTG Deck Builder</h1>
         </div>
         <div className="header-actions">
+          <button className="scan-button" onClick={() => setShowScanner(true)}>
+            📷 Scan Card
+          </button>
           <input
             type="text"
             value={deck.name}
@@ -277,6 +282,19 @@ export function MTGApp({ onBack }: MTGAppProps) {
           }} />
         )}
       </main>
+
+      {/* Card Scanner Overlay */}
+      {showScanner && (
+        <CardScanner 
+          onCardAdded={(card) => {
+            // Card was added to collection via API
+            // Refresh collection if viewing it
+            setCollectionUpdateKey(prev => prev + 1);
+            console.log('Added to collection:', card.name);
+          }}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
     </div>
   );
 }
