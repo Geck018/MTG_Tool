@@ -81,18 +81,58 @@ const TOPIC_EXPLANATIONS: { [key: string]: string } = {
   'commander': `**Commander (EDH)** is a popular multiplayer format:\n\n• **100-card singleton deck** (only 1 copy of each card, except basic lands)\n• **Legendary creature as commander** (starts in command zone)\n• **Color identity** - Only cards matching commander's colors allowed\n• **40 starting life**\n• **Commander damage** - 21 combat damage from one commander = loss\n• **Command zone tax** - Costs 2 more each time cast from command zone`,
 };
 
-// Generate explanation by finding relevant topic
-function findTopicExplanation(query: string): string | null {
+// Keyword interaction explanations - when multiple keywords appear together
+const KEYWORD_INTERACTIONS: { [key: string]: string } = {
+  // Deathtouch interactions
+  'deathtouch+indestructible': `**Deathtouch vs Indestructible**\n\nWhen a creature with deathtouch deals damage to an indestructible creature:\n\n• The deathtouch damage is considered **lethal** (it would destroy a normal creature)\n• BUT indestructible **prevents destruction** from any source\n• The indestructible creature **survives**\n\n**Result:** The indestructible creature takes the damage but doesn't die. Deathtouch says "this damage is lethal," but indestructible says "I can't be destroyed by damage."\n\n**Ways to beat indestructible:**\n• Exile effects\n• -X/-X effects (reducing toughness to 0)\n• Sacrifice effects\n• "Destroy" doesn't work, but these do!`,
+
+  'deathtouch+trample': `**Deathtouch + Trample Combo**\n\nThis is a powerful combination! Here's why:\n\n• Trample requires you to assign **lethal damage** to blockers before trampling over\n• Deathtouch makes **any amount of damage lethal** (even 1)\n• So you only need to assign **1 damage per blocker**!\n\n**Example:** Your 7/7 with deathtouch and trample is blocked by three 5/5 creatures.\n• Assign 1 damage to each blocker (3 total) - all three die to deathtouch\n• The remaining 4 damage tramples through to your opponent!`,
+
+  'deathtouch+first strike': `**Deathtouch + First Strike**\n\nThis combination makes an excellent blocker:\n\n• First strike deals damage **before** regular combat damage\n• Deathtouch makes that damage **lethal**\n• The opposing creature **dies before it can hit back**\n\n**Example:** Your 1/1 with deathtouch and first strike blocks a 10/10.\n• Your creature deals 1 damage first (lethal due to deathtouch)\n• The 10/10 dies before dealing its damage\n• Your 1/1 survives!\n\nThis is why Glissa, the Traitor and similar cards are so good.`,
+
+  'first strike+double strike': `**First Strike vs Double Strike**\n\n• **First strike** deals damage in an early combat damage step\n• **Double strike** deals damage in BOTH the first strike step AND the regular step\n\nDouble strike is strictly better - it includes first strike AND deals damage twice.\n\n**Example:** A 3/3 double strike vs a 4/4 first strike:\n• First strike step: Both deal damage (3 to the 4/4, 4 to the 3/3)\n• The 3/3 survives (1 damage), the 4/4 survives (3 damage)\n• Regular step: Only the double striker deals again (+3 damage to 4/4)\n• The 4/4 dies (6 total damage), double striker wins!`,
+
+  'hexproof+indestructible': `**Hexproof + Indestructible**\n\nA creature with both is very hard to remove:\n\n• **Hexproof** - Can't be targeted by opponent's spells/abilities\n• **Indestructible** - Can't be destroyed by damage or "destroy" effects\n\n**What still works:**\n• Board wipes that don't say "destroy" (exile all, -X/-X to all)\n• Sacrifice effects ("each player sacrifices a creature")\n• Effects that don't target ("exile all creatures")\n• Reducing toughness to 0 with -X/-X\n\n**What doesn't work:**\n• Targeted removal\n• Damage-based removal\n• "Destroy target/all" effects`,
+
+  'lifelink+deathtouch': `**Lifelink + Deathtouch**\n\nBoth abilities work independently:\n\n• **Deathtouch** - Any damage to creatures is lethal\n• **Lifelink** - You gain life equal to damage dealt\n\nThis makes a great defensive creature:\n• Blocks and kills any attacker (deathtouch)\n• Gains you life in the process (lifelink)\n\n**Combat example:** Your 2/2 lifelink deathtouch blocks a 6/6.\n• You deal 2 damage (lethal to the 6/6)\n• You gain 2 life\n• Their 6/6 dies, your creature takes 6 and dies too\n\nBut you traded up AND gained life!`,
+
+  'trample+indestructible': `**Trample vs Indestructible Blocker**\n\nWhen a trampling creature is blocked by an indestructible creature:\n\n• You must still assign **lethal damage** to the blocker\n• For a normal creature, lethal = its toughness\n• Indestructible doesn't change how much is "lethal"\n\n**Example:** Your 7/7 trample attacks, blocked by a 3/3 indestructible.\n• You assign 3 damage to the blocker (lethal amount)\n• 4 damage tramples through to opponent\n• The 3/3 survives (indestructible) but took the damage\n\nIndestructible doesn't absorb extra damage - trample still works!`,
+
+  'flying+reach': `**Flying vs Reach**\n\n• **Flying** - Can only be blocked by flying or reach creatures\n• **Reach** - Can block creatures with flying\n\n**Key points:**\n• Reach does NOT give flying\n• A creature with reach can't fly over blockers\n• Flying creatures CAN block non-flying creatures\n• Reach is purely a "can block flyers" ability\n\n**In combat:** A flying attacker can be blocked by a reach creature. A reach creature attacking can be blocked by anything.`,
+
+  'menace+flying': `**Menace + Flying**\n\nThis combination is hard to block:\n\n• **Flying** - Only flying/reach creatures can block\n• **Menace** - Requires TWO creatures to block\n\nYour opponent needs **two creatures with flying or reach** to block. This often means the creature is unblockable in practice.\n\n**Even better with:** Trample (if they can't block properly, damage tramples), or Deathtouch (kills whatever does block).`,
+
+  'vigilance+lifelink': `**Vigilance + Lifelink**\n\nA great defensive combination:\n\n• **Vigilance** - Doesn't tap when attacking\n• **Lifelink** - Gains life when dealing damage\n\n**Benefits:**\n• Attack to gain life AND stay untapped to block\n• Threaten both offense and defense every turn\n• Gain life on both your attack and their attack (if you block)\n\nThis is why cards like Baneslayer Angel are so strong - constant life gain while maintaining a defensive presence.`,
+
+  'protection+indestructible': `**Protection vs Indestructible**\n\nThese are different abilities:\n\n**Protection from [X]** prevents:\n• **D**amage from X sources\n• **E**nchanting/Equipping by X\n• **B**locking by X creatures\n• **T**argeting by X spells/abilities\n\n**Indestructible** only prevents:\n• Destruction from damage\n• Destruction from "destroy" effects\n\n**Key difference:** Protection prevents the damage entirely. Indestructible takes the damage but survives. Protection also prevents targeting; indestructible doesn't.`,
+
+  'wither+deathtouch': `**Wither + Deathtouch** (or Infect + Deathtouch)\n\nWither/Infect deal damage as -1/-1 counters to creatures:\n\n• Deathtouch makes ANY damage lethal\n• So 1 -1/-1 counter kills the creature\n• The creature still gets the counter (if it somehow survives)\n\n**With Infect:** This is especially brutal because infect also deals poison counters to players. A 1/1 infect deathtouch is a real threat.`,
+
+  'shroud+hexproof': `**Shroud vs Hexproof**\n\n• **Shroud** - Can't be targeted by ANY spells or abilities (even yours!)\n• **Hexproof** - Can't be targeted by OPPONENTS' spells or abilities\n\nHexproof is generally better because you can still:\n• Equip your hexproof creature\n• Enchant it with auras\n• Target it with pump spells\n\nShroud was the older ability; hexproof replaced it for most new cards.`,
+};
+
+// All known keywords for detection
+const KNOWN_KEYWORDS = [
+  'trample', 'flying', 'deathtouch', 'first strike', 'double strike',
+  'hexproof', 'indestructible', 'lifelink', 'vigilance', 'haste',
+  'flash', 'menace', 'reach', 'ward', 'prowess', 'shroud', 'protection',
+  'wither', 'infect', 'defender', 'fear', 'intimidate', 'skulk',
+  'shadow', 'horsemanship', 'flanking', 'bushido', 'ninjutsu',
+  'unblockable', 'persist', 'undying', 'regenerate', 'phasing',
+];
+
+// Detect all keywords mentioned in a query
+function detectKeywords(query: string): string[] {
   const queryLower = query.toLowerCase();
+  const found: string[] = [];
   
-  // Direct topic matches
-  for (const [topic, explanation] of Object.entries(TOPIC_EXPLANATIONS)) {
-    if (queryLower.includes(topic)) {
-      return explanation;
+  for (const keyword of KNOWN_KEYWORDS) {
+    if (queryLower.includes(keyword)) {
+      found.push(keyword);
     }
   }
   
-  // Keyword variations
+  // Check variations
   const variations: { [key: string]: string } = {
     'first-strike': 'first strike',
     'firststrike': 'first strike',
@@ -102,6 +142,115 @@ function findTopicExplanation(query: string): string | null {
     'death-touch': 'deathtouch',
     'life link': 'lifelink',
     'life-link': 'lifelink',
+  };
+  
+  for (const [variant, keyword] of Object.entries(variations)) {
+    if (queryLower.includes(variant) && !found.includes(keyword)) {
+      found.push(keyword);
+    }
+  }
+  
+  return [...new Set(found)]; // Remove duplicates
+}
+
+// Check for known keyword interactions
+function findInteractionExplanation(keywords: string[]): string | null {
+  if (keywords.length < 2) return null;
+  
+  // Sort keywords to create consistent keys
+  const sortedKeywords = [...keywords].sort();
+  
+  // Check all combinations
+  for (let i = 0; i < sortedKeywords.length; i++) {
+    for (let j = i + 1; j < sortedKeywords.length; j++) {
+      const key = `${sortedKeywords[i]}+${sortedKeywords[j]}`;
+      if (KEYWORD_INTERACTIONS[key]) {
+        return KEYWORD_INTERACTIONS[key];
+      }
+      // Try reverse order too
+      const reverseKey = `${sortedKeywords[j]}+${sortedKeywords[i]}`;
+      if (KEYWORD_INTERACTIONS[reverseKey]) {
+        return KEYWORD_INTERACTIONS[reverseKey];
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Generate combined explanation for multiple topics
+function generateCombinedExplanation(keywords: string[]): string | null {
+  if (keywords.length === 0) return null;
+  
+  // If only one keyword, return its explanation
+  if (keywords.length === 1 && TOPIC_EXPLANATIONS[keywords[0]]) {
+    return TOPIC_EXPLANATIONS[keywords[0]];
+  }
+  
+  // Check for known interactions first
+  const interactionExplanation = findInteractionExplanation(keywords);
+  if (interactionExplanation) {
+    return interactionExplanation;
+  }
+  
+  // If no known interaction, combine individual explanations
+  if (keywords.length >= 2) {
+    const explanations: string[] = [];
+    for (const keyword of keywords) {
+      if (TOPIC_EXPLANATIONS[keyword]) {
+        explanations.push(TOPIC_EXPLANATIONS[keyword]);
+      }
+    }
+    
+    if (explanations.length >= 2) {
+      return `I found multiple keywords in your question. Here's how each works:\n\n---\n\n${explanations.join('\n\n---\n\n')}\n\n---\n\n**Interaction:** These abilities generally work independently unless there's a specific rules interaction. Each resolves according to its own rules.`;
+    }
+  }
+  
+  // Single keyword with explanation
+  if (keywords.length === 1 && TOPIC_EXPLANATIONS[keywords[0]]) {
+    return TOPIC_EXPLANATIONS[keywords[0]];
+  }
+  
+  return null;
+}
+
+// Generate explanation by finding relevant topic
+function findTopicExplanation(query: string): string | null {
+  const queryLower = query.toLowerCase();
+  
+  // First, detect all keywords in the query
+  const detectedKeywords = detectKeywords(query);
+  
+  // If we found multiple keywords, handle as interaction
+  if (detectedKeywords.length >= 2) {
+    const combinedExplanation = generateCombinedExplanation(detectedKeywords);
+    if (combinedExplanation) {
+      return combinedExplanation;
+    }
+  }
+  
+  // Single keyword or topic match
+  if (detectedKeywords.length === 1 && TOPIC_EXPLANATIONS[detectedKeywords[0]]) {
+    return TOPIC_EXPLANATIONS[detectedKeywords[0]];
+  }
+  
+  // Check for other topic matches (non-keyword topics)
+  const otherTopics = [
+    'summoning sickness', 'stack', 'priority', 'state-based actions',
+    'legendary rule', 'graveyard', 'exile', 'battlefield', 'phases',
+    'combat', 'instant', 'sorcery', 'planeswalker', 'land per turn',
+    'win the game', 'commander'
+  ];
+  
+  for (const topic of otherTopics) {
+    if (queryLower.includes(topic)) {
+      return TOPIC_EXPLANATIONS[topic] || null;
+    }
+  }
+  
+  // Keyword variations for non-keyword topics
+  const variations: { [key: string]: string } = {
     'state based': 'state-based actions',
     'sba': 'state-based actions',
     'etb': 'battlefield',
