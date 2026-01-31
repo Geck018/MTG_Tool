@@ -3,7 +3,10 @@ name = "mtg-deckbuilder-api"
 main = "worker/index.ts"
 compatibility_date = "2024-01-01"
 
-# Custom domain route
+# Keep workers.dev enabled
+workers_dev = true
+
+# Custom domain route (for when DNS propagates)
 routes = [
   { pattern = "api.tabletoptools.cc/*", zone_name = "tabletoptools.cc" }
 ]
