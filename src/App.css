@@ -1811,3 +1811,484 @@ body {
   font-weight: 700;
   font-size: 1rem;
 }
+
+/* =====================================================
+   TABLETOP TOOLS - HOME PAGE
+   ===================================================== */
+
+.tabletop-tools {
+  min-height: 100vh;
+}
+
+.home-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+}
+
+.home-hero {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: linear-gradient(180deg, var(--bg-secondary) 0%, transparent 100%);
+}
+
+.home-logo {
+  font-size: 5rem;
+  margin-bottom: 1rem;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.home-title {
+  font-size: 3.5rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--accent) 0%, #667eea 50%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 1rem;
+}
+
+.home-subtitle {
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.game-selection {
+  padding: 3rem 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.section-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  margin-bottom: 3rem;
+}
+
+.game-card {
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.game-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--game-color, var(--accent));
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+
+.game-card:hover::before,
+.game-card.hovered::before {
+  transform: scaleX(1);
+}
+
+.game-card.active:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  border-color: var(--game-color, var(--accent));
+}
+
+.game-card.inactive {
+  opacity: 0.7;
+}
+
+.game-card.inactive:hover {
+  opacity: 0.85;
+  transform: translateY(-4px);
+}
+
+.game-card-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.game-card-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+}
+
+.game-card-description {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.game-card-badge {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.game-card-badge.active {
+  background: rgba(74, 222, 128, 0.2);
+  color: var(--success);
+}
+
+.game-card-badge.coming-soon {
+  background: rgba(251, 191, 36, 0.2);
+  color: var(--warning);
+}
+
+.game-card-badge.placeholder {
+  background: rgba(102, 126, 234, 0.2);
+  color: #667eea;
+}
+
+.home-features {
+  padding: 3rem 2rem;
+  background: var(--bg-secondary);
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.feature-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent);
+}
+
+.feature-icon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.feature-card h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.feature-card p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.home-footer {
+  text-align: center;
+  padding: 3rem 2rem;
+  border-top: 1px solid var(--border);
+}
+
+.home-footer p {
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.footer-domain {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+/* =====================================================
+   BACK BUTTON
+   ===================================================== */
+
+.back-button {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  margin-right: 1rem;
+}
+
+.back-button:hover {
+  background: var(--border);
+  border-color: var(--accent);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* =====================================================
+   MTG APP STYLES
+   ===================================================== */
+
+.mtg-app {
+  --game-accent: #667eea;
+}
+
+.mtg-header h1 {
+  color: var(--accent);
+}
+
+/* =====================================================
+   WARHAMMER APP STYLES
+   ===================================================== */
+
+.warhammer-app {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #2d1b1b 100%);
+}
+
+.warhammer-header {
+  background: linear-gradient(90deg, #1a1a2e 0%, #3d1c1c 100%);
+  border-bottom: 2px solid #dc2626;
+}
+
+.warhammer-header h1 {
+  color: #dc2626;
+}
+
+.warhammer-main {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 3rem 2rem;
+}
+
+.warhammer-hero {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: radial-gradient(ellipse at center, rgba(220, 38, 38, 0.1) 0%, transparent 70%);
+  border-radius: 16px;
+  margin-bottom: 3rem;
+}
+
+.warhammer-icon {
+  font-size: 5rem;
+  margin-bottom: 1rem;
+}
+
+.warhammer-hero h2 {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #dc2626;
+  margin-bottom: 1rem;
+}
+
+.warhammer-tagline {
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.warhammer-preview {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem;
+  margin-bottom: 3rem;
+}
+
+.warhammer-preview h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #dc2626;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.feature-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+.preview-feature {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  transition: all 0.2s;
+}
+
+.preview-feature:hover {
+  border-color: #dc2626;
+  transform: translateX(4px);
+}
+
+.preview-feature-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.preview-feature-content h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.preview-feature-content p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.warhammer-factions {
+  margin-bottom: 3rem;
+}
+
+.warhammer-factions h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #dc2626;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.faction-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.faction-card {
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  transition: all 0.2s;
+  cursor: default;
+}
+
+.faction-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.faction-card.imperium {
+  border-color: #ffd700;
+}
+
+.faction-card.imperium:hover {
+  background: rgba(255, 215, 0, 0.05);
+}
+
+.faction-card.chaos {
+  border-color: #dc2626;
+}
+
+.faction-card.chaos:hover {
+  background: rgba(220, 38, 38, 0.05);
+}
+
+.faction-card.xenos {
+  border-color: #22c55e;
+}
+
+.faction-card.xenos:hover {
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.faction-icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.faction-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.warhammer-cta {
+  text-align: center;
+  padding: 2rem;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.warhammer-cta p {
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+/* =====================================================
+   RESPONSIVE ADJUSTMENTS
+   ===================================================== */
+
+@media (max-width: 768px) {
+  .home-title {
+    font-size: 2.5rem;
+  }
+  
+  .home-subtitle {
+    font-size: 1rem;
+  }
+  
+  .game-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .header-left {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .back-button {
+    margin-right: 0;
+    margin-bottom: 0.5rem;
+  }
+  
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .header-actions {
+    flex-direction: column;
+  }
+}
