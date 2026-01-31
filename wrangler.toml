@@ -1,0 +1,18 @@
+# Cloudflare Worker configuration for MTG Deck Builder API
+name = "mtg-deckbuilder-api"
+main = "worker/index.ts"
+compatibility_date = "2024-01-01"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "mtg-deckbuilder"
+database_id = "" # Will be filled after creating the database
+
+# For local development
+[dev]
+port = 8787
+
+# Environment variables (if needed)
+[vars]
+ENVIRONMENT = "production"
