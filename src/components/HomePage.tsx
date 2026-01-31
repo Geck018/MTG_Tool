@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export type GameType = 'home' | 'mtg' | 'warhammer';
+export type GameType = 'home' | 'mtg' | 'warhammer' | 'rules';
 
 interface GameOption {
   id: GameType;
@@ -27,6 +27,24 @@ const GAMES: GameOption[] = [
     icon: '⚔️',
     color: '#dc2626',
     status: 'placeholder'
+  }
+];
+
+interface ToolOption {
+  id: GameType;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+}
+
+const TOOLS: ToolOption[] = [
+  {
+    id: 'rules',
+    name: 'Rules Assistant',
+    description: 'Ask questions about game rules in natural language. Currently supports MTG rules.',
+    icon: '📖',
+    color: '#22c55e'
   }
 ];
 
@@ -73,6 +91,27 @@ export function HomePage({ onSelectGame }: HomePageProps) {
               {game.status === 'active' && (
                 <span className="game-card-badge active">Available</span>
               )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="tools-selection">
+        <h2 className="section-title">Universal Tools</h2>
+        <div className="game-grid">
+          {TOOLS.map((tool) => (
+            <div
+              key={tool.id}
+              className="game-card active"
+              onClick={() => onSelectGame(tool.id)}
+              style={{
+                '--game-color': tool.color
+              } as React.CSSProperties}
+            >
+              <div className="game-card-icon">{tool.icon}</div>
+              <h3 className="game-card-title">{tool.name}</h3>
+              <p className="game-card-description">{tool.description}</p>
+              <span className="game-card-badge active">Available</span>
             </div>
           ))}
         </div>

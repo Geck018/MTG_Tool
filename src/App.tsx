@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { HomePage, type GameType } from './components/HomePage';
 import { MTGApp } from './components/MTGApp';
 import { WarhammerApp } from './components/WarhammerApp';
+import { RulesChat } from './components/RulesChat';
 import './App.css';
 
 function App() {
@@ -14,6 +15,8 @@ function App() {
       setCurrentGame('mtg');
     } else if (hash.startsWith('#/warhammer')) {
       setCurrentGame('warhammer');
+    } else if (hash.startsWith('#/rules')) {
+      setCurrentGame('rules');
     } else {
       setCurrentGame('home');
     }
@@ -25,6 +28,8 @@ function App() {
         setCurrentGame('mtg');
       } else if (hash.startsWith('#/warhammer')) {
         setCurrentGame('warhammer');
+      } else if (hash.startsWith('#/rules')) {
+        setCurrentGame('rules');
       } else {
         setCurrentGame('home');
       }
@@ -58,6 +63,11 @@ function App() {
       )}
       {currentGame === 'warhammer' && (
         <WarhammerApp onBack={handleBackToHome} />
+      )}
+      {currentGame === 'rules' && (
+        <div className="rules-page">
+          <RulesChat gameSystem="mtg" onBack={handleBackToHome} />
+        </div>
       )}
     </div>
   );
