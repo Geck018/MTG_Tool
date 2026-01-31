@@ -7,7 +7,7 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "mtg-deckbuilder"
-database_id = "" # Will be filled after creating the database
+database_id = "22a6f571-2f3b-4b26-9567-e910952b4658"
 
 # For local development
 [dev]
