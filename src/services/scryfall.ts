@@ -71,13 +71,33 @@ export class ScryfallService {
       return this.cache.get(cacheKey)!;
     }
 
+    // Also check cache without set
+    if (set && this.cache.has(name)) {
+      return this.cache.get(name)!;
+    }
+
     try {
+      // Only use set parameter if it looks like a set code (2-5 alphanumeric chars)
+      const isSetCode = set && /^[a-zA-Z0-9]{2,5}$/.test(set);
+      
       let url = `${SCRYFALL_API}/cards/named?exact=${encodeURIComponent(name)}`;
-      if (set) {
-        url += `&set=${encodeURIComponent(set)}`;
+      if (isSetCode) {
+        url += `&set=${encodeURIComponent(set.toLowerCase())}`;
       }
 
-      const response = await fetch(url);
+      let response = await fetch(url);
+      
+      // If failed with set code, retry without it
+      if (!response.ok && isSetCode) {
+        url = `${SCRYFALL_API}/cards/named?exact=${encodeURIComponent(name)}`;
+        response = await fetch(url);
+      }
+      
+      // If exact match fails, try fuzzy search
+      if (!response.ok) {
+        url = `${SCRYFALL_API}/cards/named?fuzzy=${encodeURIComponent(name)}`;
+        response = await fetch(url);
+      }
       
       if (!response.ok) {
         return null;
@@ -85,6 +105,7 @@ export class ScryfallService {
 
       const card = await response.json();
       this.cache.set(cacheKey, card);
+      this.cache.set(name, card); // Also cache without set
       // Save cache periodically (every 10 cards)
       if (this.cache.size % 10 === 0) {
         this.saveCache();
@@ -115,6 +136,9 @@ export class ScryfallService {
       const cacheKey = `${name}${cardSet ? `:${cardSet}` : ''}`;
       if (this.cache.has(cacheKey)) {
         results.set(name, this.cache.get(cacheKey)!);
+      } else if (this.cache.has(name)) {
+        // Try cache without set
+        results.set(name, this.cache.get(name)!);
       } else {
         uncached.push({ name, set: cardSet });
       }

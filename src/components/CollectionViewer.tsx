@@ -9,6 +9,7 @@ import { getCardCategory, getCategoryOrder, ALL_CATEGORIES, type CardCategory } 
 interface CollectionCard extends BulkCard {
   cardData?: Card;
   loading?: boolean;
+  failed?: boolean; // Mark cards that failed to load
 }
 
 type SortOption = 'name' | 'cmc' | 'rarity' | 'set' | 'quantity';
@@ -30,7 +31,8 @@ export function CollectionViewer() {
   useEffect(() => {
     // Load card data for all cards (with batching to avoid rate limits)
     // This will continuously load batches until all cards are loaded
-    if (collection.length > 0 && collection.some(c => !c.cardData && !c.loading) && !loadingRef.current) {
+    // Skip cards that are already loading, have data, or have failed
+    if (collection.length > 0 && collection.some(c => !c.cardData && !c.loading && !c.failed) && !loadingRef.current) {
       loadCardDataBatch();
     }
   }, [collection.length]);
@@ -45,8 +47,8 @@ export function CollectionViewer() {
     
     // Get current collection state
     setCollection(current => {
-      // Get cards that need loading from current state
-      const cardsToLoad = current.filter(c => !c.cardData && !c.loading).slice(0, 20);
+      // Get cards that need loading from current state (skip failed ones)
+      const cardsToLoad = current.filter(c => !c.cardData && !c.loading && !c.failed).slice(0, 20);
       if (cardsToLoad.length === 0) {
         loadingRef.current = false;
         return current;
@@ -78,9 +80,10 @@ export function CollectionViewer() {
             const updated = prev.map(c => {
               const card = cardMap.get(c.name);
               if (card && cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)) {
-                return { ...c, cardData: card, loading: false };
+                return { ...c, cardData: card, loading: false, failed: false };
               } else if (cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)) {
-                return { ...c, loading: false };
+                // Mark as failed so we don't retry infinitely
+                return { ...c, loading: false, failed: true };
               }
               return c;
             });
@@ -88,7 +91,8 @@ export function CollectionViewer() {
             loadingRef.current = false;
             
             // Check if there are more cards to load and trigger next batch
-            const remaining = updated.filter(c => !c.cardData && !c.loading);
+            // Skip failed cards
+            const remaining = updated.filter(c => !c.cardData && !c.loading && !c.failed);
             if (remaining.length > 0) {
               // Trigger next batch after a short delay
               setTimeout(() => {
@@ -105,7 +109,7 @@ export function CollectionViewer() {
             loadingRef.current = false;
             return prev.map(c => 
               cardsToLoad.some(ct => ct.name === c.name && ct.set === c.set)
-                ? { ...c, loading: false }
+                ? { ...c, loading: false, failed: true }
                 : c
             );
           });
@@ -307,31 +311,31 @@ export function CollectionViewer() {
                     {category} ({cards.length})
                   </h3>
                   <div className="tile-grid">
-                    {cards.map((bulkCard, index) => (
-                      <div
-                        key={`${bulkCard.name}-${bulkCard.set}-${bulkCard.collector_number}-${index}`}
-                        className="collection-tile"
-                        onClick={() => loadCardDetails(bulkCard)}
-                      >
-                        {bulkCard.loading ? (
-                          <div className="tile-loading">Loading...</div>
-                        ) : bulkCard.cardData?.image_uris?.normal ? (
-                          <img
-                            src={bulkCard.cardData.image_uris.normal}
-                            alt={bulkCard.name}
-                            className="tile-image"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = 'none';
-                            }}
-                          />
-                        ) : (
-                          <div className="tile-placeholder">
-                            <div className="tile-placeholder-name">{bulkCard.name}</div>
-                            <div className="tile-placeholder-type">
-                              {bulkCard.cardData?.type_line || 'Loading...'}
+                      {cards.map((bulkCard, index) => (
+                        <div
+                          key={`${bulkCard.name}-${bulkCard.set}-${bulkCard.collector_number}-${index}`}
+                          className={`collection-tile ${bulkCard.failed ? 'tile-failed' : ''}`}
+                          onClick={() => loadCardDetails(bulkCard)}
+                        >
+                          {bulkCard.loading ? (
+                            <div className="tile-loading">Loading...</div>
+                          ) : bulkCard.cardData?.image_uris?.normal ? (
+                            <img
+                              src={bulkCard.cardData.image_uris.normal}
+                              alt={bulkCard.name}
+                              className="tile-image"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="tile-placeholder">
+                              <div className="tile-placeholder-name">{bulkCard.name}</div>
+                              <div className="tile-placeholder-type">
+                                {bulkCard.failed ? 'Card not found' : (bulkCard.cardData?.type_line || 'Loading...')}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
                         <div className="tile-overlay">
                           <div className="tile-name">{bulkCard.name}</div>
                           <div className="tile-quantity">×{bulkCard.quantity}</div>
