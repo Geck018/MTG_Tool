@@ -3,9 +3,12 @@ import { HomePage, type GameType } from './components/HomePage';
 import { MTGApp } from './components/MTGApp';
 import { WarhammerApp } from './components/WarhammerApp';
 import { RulesChat } from './components/RulesChat';
+import { LoginSignup, UserMenu } from './components/LoginSignup';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import './App.css';
 
-function App() {
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
   const [currentGame, setCurrentGame] = useState<GameType>('home');
 
   // Handle URL routing
@@ -53,8 +56,28 @@ function App() {
     window.history.pushState({}, '', '/');
   };
 
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="app-loading">
+        <div className="loading-spinner"></div>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  // Show login if not authenticated
+  if (!isAuthenticated) {
+    return <LoginSignup />;
+  }
+
   return (
     <div className="tabletop-tools">
+      {/* Global user menu */}
+      <div className="global-header">
+        <UserMenu />
+      </div>
+      
       {currentGame === 'home' && (
         <HomePage onSelectGame={handleSelectGame} />
       )}
@@ -70,6 +93,14 @@ function App() {
         </div>
       )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
