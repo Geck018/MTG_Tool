@@ -3,6 +3,11 @@ name = "mtg-deckbuilder-api"
 main = "worker/index.ts"
 compatibility_date = "2024-01-01"
 
+# Custom domain route
+routes = [
+  { pattern = "api.tabletoptools.cc/*", zone_name = "tabletoptools.cc" }
+]
+
 # D1 Database binding
 [[d1_databases]]
 binding = "DB"
