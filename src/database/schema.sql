@@ -100,3 +100,45 @@ SELECT
 FROM decks d
 LEFT JOIN deck_cards dc ON d.id = dc.deck_id
 GROUP BY d.id;
+
+-- ============================================
+-- REMOTE PLAY (SpellTable-style, game-agnostic)
+-- ============================================
+-- game_type: 'mtg' | future: 'warhammer' | etc.
+-- Actions are small JSON payloads; works on very slow connections.
+
+CREATE TABLE IF NOT EXISTS play_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  join_code TEXT NOT NULL UNIQUE,       -- Short code to share (e.g. ABC12)
+  game_type TEXT NOT NULL DEFAULT 'mtg',
+  host_username TEXT NOT NULL,
+  settings TEXT,                        -- JSON: e.g. {"starting_life": 40}
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (host_username) REFERENCES users(username) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS play_participants (
+  session_id INTEGER NOT NULL,
+  username TEXT NOT NULL,
+  seat_index INTEGER NOT NULL DEFAULT 0,
+  life_total INTEGER,                   -- MTG life; NULL for other games
+  joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (session_id, username),
+  FOREIGN KEY (session_id) REFERENCES play_sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS play_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id INTEGER NOT NULL,
+  username TEXT NOT NULL,
+  action_type TEXT NOT NULL,            -- 'play_card' | 'pass_turn' | 'set_life' | 'chat' | etc.
+  payload TEXT,                         -- JSON: e.g. {"scryfall_id":"..."}
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (session_id) REFERENCES play_sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_play_sessions_join_code ON play_sessions(join_code);
+CREATE INDEX IF NOT EXISTS idx_play_participants_session ON play_participants(session_id);
+CREATE INDEX IF NOT EXISTS idx_play_actions_session ON play_actions(session_id);

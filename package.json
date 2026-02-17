@@ -7,11 +7,13 @@
     "dev:api": "wrangler dev",
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:api\"",
     "build": "tsc && vite build",
+    "build:api": "esbuild worker/index.ts --bundle --outfile=dist-api/worker.js --format=esm --platform=browser --target=esnext --minify",
     "preview": "vite preview",
     "db:create": "wrangler d1 create mtg-deckbuilder",
     "db:migrate": "wrangler d1 execute mtg-deckbuilder --file=./src/database/schema.sql",
     "db:migrate:local": "wrangler d1 execute mtg-deckbuilder --local --file=./src/database/schema.sql",
-    "deploy:api": "wrangler deploy"
+    "deploy:api": "wrangler deploy",
+    "deploy:api:dist": "wrangler deploy --config=wrangler.deploy.toml"
   },
   "dependencies": {
     "lucide-react": "^0.294.0",
@@ -20,6 +22,7 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "esbuild": "^0.24.0",
     "@cloudflare/workers-types": "^4.20240117.0",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",

@@ -1,0 +1,17 @@
+# Deploy the pre-built API bundle from dist-api/ (run npm run build:api first)
+# Use: npm run deploy:api:dist   or   wrangler deploy --config=wrangler.deploy.toml
+name = "mtg-deckbuilder-api"
+main = "dist-api/worker.js"
+compatibility_date = "2024-01-01"
+workers_dev = true
+routes = [
+  { pattern = "api.tabletoptools.cc/*", zone_name = "tabletoptools.cc" }
+]
+[[d1_databases]]
+binding = "DB"
+database_name = "mtg-deckbuilder"
+database_id = "22a6f571-2f3b-4b26-9567-e910952b4658"
+[dev]
+port = 8787
+[vars]
+ENVIRONMENT = "production"

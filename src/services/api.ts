@@ -104,12 +104,14 @@ export const collectionApi = {
 // DECK API
 // ============================================
 
-// Deck cards as returned by API (scryfall_ids only)
+// Deck cards as returned by API (scryfall_ids only; name/mana_cost when with_names=1)
 export interface DeckCardRef {
   scryfall_id: string;
   quantity: number;
   is_sideboard: boolean;
   is_commander: boolean;
+  name?: string;
+  mana_cost?: string;
 }
 
 export interface DeckWithCards extends DeckSummary {
@@ -124,8 +126,8 @@ export const deckApi = {
       body: JSON.stringify(deck),
     }),
 
-  get: (id: number) => 
-    fetchApi<DeckWithCards>(`/api/decks/${id}`),
+  get: (id: number, withNames = false) =>
+    fetchApi<DeckWithCards>(`/api/decks/${id}${withNames ? '?with_names=1' : ''}`),
 
   update: (id: number, updates: Partial<Pick<Deck, 'name' | 'commander_id' | 'format' | 'description'>>) => 
     fetchApi<{ id: number; updated: boolean }>(`/api/decks/${id}`, {
@@ -149,11 +151,120 @@ export const deckApi = {
       method: 'DELETE',
     }),
 
+  /** Resolve card names to scryfall_id + name via server (use when Scryfall is blocked from client). */
+  resolveList: (cards: Array<{ quantity: number; name: string; set?: string }>) =>
+    fetchApi<{ resolved: Array<{ scryfall_id: string; name: string; quantity: number }>; not_found: string[] }>(
+      '/api/decks/resolve-list',
+      { method: 'POST', body: JSON.stringify({ cards }) }
+    ),
+
   share: (deckId: number, username: string, role: 'owner' | 'editor' | 'viewer' = 'viewer') => 
     fetchApi<{ deck_id: number; username: string; role: string; shared: boolean }>(`/api/decks/${deckId}/share`, {
       method: 'POST',
       body: JSON.stringify({ username, role }),
     }),
+};
+
+// ============================================
+// REMOTE PLAY (low-bandwidth friendly)
+// ============================================
+
+export interface PlayParticipant {
+  username: string;
+  seat_index: number;
+  life_total: number | null;
+  joined_at: string;
+}
+
+export interface PlayAction {
+  id: number;
+  username: string;
+  action_type: string;
+  payload: string | null;
+  created_at: string;
+}
+
+export interface PlaySessionState {
+  id: number;
+  join_code: string;
+  game_type: string;
+  host_username: string;
+  settings: string | null;
+  created_at: string;
+  updated_at: string;
+  participants: PlayParticipant[];
+  actions: PlayAction[];
+}
+
+export const playApi = {
+  createSession: (hostUsername: string, gameType = 'mtg', settings?: string) =>
+    fetchApi<{
+      id: number;
+      join_code: string;
+      game_type: string;
+      host_username: string;
+      settings: string;
+      created: boolean;
+    }>('/api/play/sessions', {
+      method: 'POST',
+      body: JSON.stringify({
+        host_username: hostUsername,
+        game_type: gameType,
+        settings: settings ?? (gameType === 'mtg' ? JSON.stringify({ starting_life: 40 }) : undefined),
+      }),
+    }),
+
+  getSession: (joinCode: string, sinceActionId?: number) => {
+    const url = sinceActionId
+      ? `/api/play/sessions/${encodeURIComponent(joinCode)}?since=${sinceActionId}`
+      : `/api/play/sessions/${encodeURIComponent(joinCode)}`;
+    return fetchApi<PlaySessionState>(url);
+  },
+
+  joinSession: (joinCode: string, username: string) =>
+    fetchApi<{ session_id: number; join_code: string; joined: boolean; already_in?: boolean }>(
+      `/api/play/sessions/${encodeURIComponent(joinCode.toUpperCase())}/join`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      }
+    ),
+
+  leaveSession: (joinCode: string, username: string) =>
+    fetchApi<{ left: boolean }>(
+      `/api/play/sessions/${encodeURIComponent(joinCode.toUpperCase())}/leave`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ username }),
+      }
+    ),
+
+  submitAction: (
+    joinCode: string,
+    username: string,
+    actionType: string,
+    payload?: Record<string, unknown> | string
+  ) =>
+    fetchApi<{ action_submitted: boolean }>(
+      `/api/play/sessions/${encodeURIComponent(joinCode.toUpperCase())}/actions`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          username,
+          action_type: actionType,
+          payload: payload ?? null,
+        }),
+      }
+    ),
+
+  setLife: (joinCode: string, username: string, lifeTotal: number) =>
+    fetchApi<{ updated: boolean; life_total: number }>(
+      `/api/play/sessions/${encodeURIComponent(joinCode.toUpperCase())}/players/${encodeURIComponent(username)}/life`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ life_total: lifeTotal }),
+      }
+    ),
 };
 
 // ============================================
@@ -169,6 +280,7 @@ export const api = {
   users: userApi,
   collection: collectionApi,
   decks: deckApi,
+  play: playApi,
   health: healthCheck,
 };
 

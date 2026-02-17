@@ -1,10 +1,55 @@
 import { useState } from 'react';
-import type { Deck, DeckCard } from '../types';
-import { CSVService } from '../utils/csv';
-import { ScryfallService } from '../services/scryfall';
+import type { Deck, DeckCard, Card } from '../types';
+import { deckApi } from '../services/api';
+
+function minimalCard(scryfallId: string, name: string): Card {
+  return {
+    id: scryfallId,
+    name,
+    cmc: 0,
+    type_line: '',
+    colors: [],
+    color_identity: [],
+    rarity: '',
+    set_name: '',
+    collector_number: '',
+  };
+}
 
 interface DeckImporterProps {
   onDeckImported: (deck: Deck) => void;
+}
+
+/** Parse deck list text into { quantity, name, set? }[] without calling Scryfall. */
+function parseDeckListToCards(text: string): Array<{ quantity: number; name: string; set?: string }> {
+  const lines = text.trim().split(/\r?\n/);
+  const cards: Array<{ quantity: number; name: string; set?: string }> = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('//')) continue;
+    if (trimmed.toLowerCase().includes('sideboard') || trimmed === 'SB:') continue;
+
+    // Format: "1 Chromatic Lantern (PLG25) 1" or "14 Forest (PLST) JMP-74"
+    const withSet = trimmed.match(/^(\d+)\s*x?\s*(.+?)\s*\(([A-Za-z0-9]{2,5})\)/);
+    if (withSet) {
+      const quantity = parseInt(withSet[1], 10);
+      const name = withSet[2].trim();
+      const set = withSet[3];
+      if (name) cards.push({ quantity, name, set: set.toLowerCase() });
+      continue;
+    }
+
+    // Format: "2 Lightning Bolt" or "2x Lightning Bolt"
+    const simple = trimmed.match(/^(\d+)\s*x?\s*(.+)$/);
+    if (simple) {
+      const quantity = parseInt(simple[1], 10);
+      const name = simple[2].trim();
+      if (name) cards.push({ quantity, name });
+    }
+  }
+
+  return cards;
 }
 
 export function DeckImporter({ onDeckImported }: DeckImporterProps) {
@@ -24,32 +69,6 @@ export function DeckImporter({ onDeckImported }: DeckImporterProps) {
     reader.readAsText(file);
   };
 
-  const parseDeckList = (text: string): Array<{ quantity: number; name: string }> => {
-    const lines = text.trim().split('\n');
-    const cards: Array<{ quantity: number; name: string }> = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('//')) continue;
-
-      // Check for sideboard marker (skip for now, sideboard handled separately)
-      if (trimmed.toLowerCase().includes('sideboard') || trimmed === 'SB:') {
-        continue;
-      }
-
-      // Parse format: "2 Lightning Bolt" or "2x Lightning Bolt"
-      const match = trimmed.match(/^(\d+)\s*x?\s*(.+)$/);
-      if (match) {
-        cards.push({
-          quantity: parseInt(match[1]),
-          name: match[2].trim()
-        });
-      }
-    }
-
-    return cards;
-  };
-
   const handleImport = async () => {
     if (!deckText.trim()) {
       setMessage({ type: 'error', text: 'Please paste deck list or upload a file' });
@@ -60,54 +79,50 @@ export function DeckImporter({ onDeckImported }: DeckImporterProps) {
     setMessage(null);
 
     try {
-      // Try CSV format first
-      let deckCards: DeckCard[] = [];
-      let sideboardCards: DeckCard[] = [];
-
-      if (deckText.includes(',')) {
-        // CSV format
-        deckCards = await CSVService.parseDeckCSV(deckText);
-      } else {
-        // Plain text format
-        const parsedCards = parseDeckList(deckText);
-        let foundSideboard = false;
-
-        for (const parsedCard of parsedCards) {
-          const card = await ScryfallService.getCardByName(parsedCard.name);
-          if (card) {
-            if (foundSideboard) {
-              sideboardCards.push({ card, quantity: parsedCard.quantity });
-            } else {
-              deckCards.push({ card, quantity: parsedCard.quantity });
-            }
-          }
-        }
-      }
-
-      if (deckCards.length === 0 && sideboardCards.length === 0) {
-        setMessage({ type: 'error', text: 'No valid cards found. Please check the format.' });
+      const parsed = parseDeckListToCards(deckText);
+      if (parsed.length === 0) {
+        setMessage({ type: 'error', text: 'No valid lines found. Use format: "2 Lightning Bolt" or "1 Name (SET) 123".' });
         setLoading(false);
         return;
       }
 
+      const { resolved, not_found } = await deckApi.resolveList(parsed);
+
+      if (resolved.length === 0) {
+        setMessage({
+          type: 'error',
+          text: not_found.length > 0
+            ? `Could not find: ${not_found.slice(0, 5).join(', ')}${not_found.length > 5 ? '…' : ''}. Check names or try without set code.`
+            : 'No valid cards resolved. Please check the format.'
+        });
+        setLoading(false);
+        return;
+      }
+
+      const deckCards: DeckCard[] = resolved.map((r) => ({
+        card: minimalCard(r.scryfall_id, r.name),
+        quantity: r.quantity
+      }));
+
       const importedDeck: Deck = {
         name: 'Imported Deck',
         cards: deckCards,
-        sideboard: sideboardCards,
+        sideboard: [],
         wishlist: []
       };
 
-      setMessage({
-        type: 'success',
-        text: `Imported ${deckCards.length} main deck cards and ${sideboardCards.length} sideboard cards.`
-      });
+      let successText = `Imported ${resolved.length} card${resolved.length === 1 ? '' : 's'}.`;
+      if (not_found.length > 0) {
+        successText += ` (${not_found.length} not found: ${not_found.slice(0, 3).join(', ')}${not_found.length > 3 ? '…' : ''})`;
+      }
+      setMessage({ type: 'success', text: successText });
 
       onDeckImported(importedDeck);
       setDeckText('');
     } catch (error) {
       setMessage({
         type: 'error',
-        text: `Error importing deck: ${error instanceof Error ? error.message : 'Unknown error'}`
+        text: `Error importing deck: ${error instanceof Error ? error.message : 'Unknown error'}. If Scryfall is blocked, the server will resolve names for you.`
       });
     } finally {
       setLoading(false);
@@ -118,7 +133,7 @@ export function DeckImporter({ onDeckImported }: DeckImporterProps) {
     <div className="import-panel">
       <h2 className="panel-title">Import Deck</h2>
       <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-        Import a deck from a text file or paste a deck list. Supports formats like "2 Lightning Bolt" or CSV.
+        Import a deck from a text file or paste a deck list. Card names are resolved on the server, so this works even when Scryfall is blocked on your network.
       </p>
 
       <div className="file-input-wrapper">
@@ -141,7 +156,7 @@ export function DeckImporter({ onDeckImported }: DeckImporterProps) {
           className="import-textarea"
           value={deckText}
           onChange={(e) => setDeckText(e.target.value)}
-          placeholder="2 Lightning Bolt&#10;4 Counterspell&#10;20 Island&#10;&#10;Sideboard:&#10;2 Negate&#10;3 Dispel"
+          placeholder="2 Lightning Bolt&#10;4 Counterspell&#10;20 Island&#10;1 Chromatic Lantern (PLG25) 1&#10;14 Forest (PLST) JMP-74"
         />
       </div>
 
@@ -167,14 +182,9 @@ export function DeckImporter({ onDeckImported }: DeckImporterProps) {
 4 Counterspell
 20 Island
 
-Sideboard:
-2 Negate
-3 Dispel
-
-Format 2 (CSV):
-Name,Quantity
-Lightning Bolt,2
-Counterspell,4`}
+Format 2 (with set code):
+1 Chromatic Lantern (PLG25) 1
+14 Forest (PLST) JMP-74`}
         </pre>
       </div>
     </div>

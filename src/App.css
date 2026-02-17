@@ -1902,13 +1902,48 @@ body {
    TABLETOP TOOLS - HOME PAGE
    ===================================================== */
 
+/* Game-themed background art (subtle, behind content) */
 .tabletop-tools {
   min-height: 100vh;
+  position: relative;
+}
+
+.game-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-color: var(--bg-primary);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Dark overlay so content stays readable; art still gives atmosphere */
+.game-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(26, 26, 46, 0.72);
+}
+
+/* Per-game background images (Unsplash / Scryfall - decorative only) */
+.tabletop-tools[data-game="home"] .game-bg {
+  background-image: url('https://images.unsplash.com/photo-1612036782180-6f0b6cd846fe?w=1920');
+}
+
+.tabletop-tools[data-game="mtg"] .game-bg,
+.tabletop-tools[data-game="play"] .game-bg,
+.tabletop-tools[data-game="rules"] .game-bg {
+  background-image: url('https://images.unsplash.com/photo-1585504198199-20277593b94f?w=1920');
+}
+
+.tabletop-tools[data-game="warhammer"] .game-bg {
+  background-image: url('https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1920');
 }
 
 .home-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+  background: transparent;
 }
 
 .home-hero {
@@ -4169,4 +4204,360 @@ body {
   .suggestions-grid {
     grid-template-columns: repeat(3, 1fr);
   }
+}
+
+/* ========== Remote Play (SpellTable-style) ========== */
+.remote-play-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.remote-play-header {
+  border-bottom: 2px solid var(--border);
+}
+
+.remote-play-landing {
+  padding: 2rem;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.remote-play-intro {
+  color: var(--text-secondary);
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.remote-play-error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid var(--error);
+  color: var(--error);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.remote-play-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.remote-play-btn {
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.remote-play-btn:hover {
+  border-color: var(--accent);
+  background: var(--bg-secondary);
+}
+
+.remote-play-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.remote-play-btn.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.remote-play-btn.secondary {
+  background: var(--bg-secondary);
+}
+
+.remote-play-btn.small {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.85rem;
+}
+
+.remote-play-btn.leave {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.remote-play-btn.leave:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.remote-play-join {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.remote-play-code-input {
+  width: 7rem;
+  padding: 0.75rem 1rem;
+  font-size: 1.1rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 8px;
+}
+
+.remote-play-code-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.remote-play-table {
+  padding: 1rem 2rem 2rem;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.remote-play-table-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.remote-play-game-type {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.remote-play-code {
+  font-size: 1rem;
+}
+
+.remote-play-code strong {
+  color: var(--accent);
+  letter-spacing: 0.1em;
+}
+
+.remote-play-copy-btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.remote-play-copy-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.remote-play-players h3,
+.remote-play-play-card h3,
+.remote-play-log h3 {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.remote-play-players-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.remote-play-player {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.remote-play-player.self {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.08);
+}
+
+.player-name {
+  font-weight: 500;
+}
+
+.player-life {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.life-value {
+  color: var(--text-secondary);
+  margin-right: 0.25rem;
+}
+
+.remote-play-life-input {
+  width: 4rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 4px;
+}
+
+.remote-play-deck-select {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.remote-play-deck-select label { font-size: 0.9rem; }
+.remote-play-deck-select-input {
+  flex: 1;
+  max-width: 240px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+.remote-play-card-qty { opacity: 0.85; font-size: 0.85em; }
+.remote-play-no-cards { font-size: 0.9rem; color: var(--text-muted); margin: 0.5rem 0; }
+
+.remote-play-play-card {
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.remote-play-card-input {
+  width: 100%;
+  max-width: 320px;
+  padding: 0.6rem 1rem;
+  font-size: 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.remote-play-card-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.remote-play-search-status {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.remote-play-card-results {
+  list-style: none;
+  margin: 0.5rem 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.remote-play-card-results li button {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.remote-play-card-results li button:hover,
+.remote-play-card-results li button.selected {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.12);
+}
+
+.remote-play-card-results .mana-cost {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.remote-play-selected-action {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+}
+
+.remote-play-selected-action .remote-play-btn {
+  margin-left: auto;
+}
+
+.remote-play-log {
+  flex: 1;
+  min-height: 120px;
+}
+
+.remote-play-log-inner {
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.remote-play-log-empty {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.remote-play-log-line {
+  font-size: 0.9rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.remote-play-log-line:last-child {
+  border-bottom: none;
+}
+
+.log-user {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.log-detail {
+  color: var(--text-secondary);
+}
+
+.log-time {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.remote-play-table-footer {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
 }

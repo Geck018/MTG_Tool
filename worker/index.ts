@@ -31,6 +31,49 @@ async function parseBody<T>(request: Request): Promise<T> {
   return request.json() as Promise<T>;
 }
 
+const SCRYFALL_BASE = 'https://api.scryfall.com';
+const SCRYFALL_COLLECTION = `${SCRYFALL_BASE}/cards/collection`;
+const SCRYFALL_BATCH_SIZE = 75;
+
+/** Resolve a card by name (and optional set) via Scryfall. Server-side only. */
+async function fetchCardByName(name: string, set?: string): Promise<{ id: string; name: string } | null> {
+  const isSetCode = set && /^[a-zA-Z0-9]{2,5}$/.test(set);
+  let url = `${SCRYFALL_BASE}/cards/named?exact=${encodeURIComponent(name)}`;
+  if (isSetCode) url += `&set=${encodeURIComponent(set.toLowerCase())}`;
+  let res = await fetch(url);
+  if (!res.ok && isSetCode) {
+    url = `${SCRYFALL_BASE}/cards/named?exact=${encodeURIComponent(name)}`;
+    res = await fetch(url);
+  }
+  if (!res.ok) {
+    url = `${SCRYFALL_BASE}/cards/named?fuzzy=${encodeURIComponent(name)}`;
+    res = await fetch(url);
+  }
+  if (!res.ok) return null;
+  const card = (await res.json()) as { id: string; name: string };
+  return { id: card.id, name: card.name };
+}
+
+/** Fetch card name (and mana_cost) for scryfall_ids from Scryfall API. Server-side only. */
+async function fetchCardNamesFromScryfall(scryfallIds: string[]): Promise<Map<string, { name: string; mana_cost?: string }>> {
+  const map = new Map<string, { name: string; mana_cost?: string }>();
+  for (let i = 0; i < scryfallIds.length; i += SCRYFALL_BATCH_SIZE) {
+    const batch = scryfallIds.slice(i, i + SCRYFALL_BATCH_SIZE);
+    const body = JSON.stringify({ identifiers: batch.map((id) => ({ id })) });
+    const res = await fetch(SCRYFALL_COLLECTION, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    if (!res.ok) continue;
+    const data = (await res.json()) as { data?: Array<{ id: string; name: string; mana_cost?: string }>; not_found?: unknown[] };
+    for (const c of data.data ?? []) {
+      map.set(c.id, { name: c.name, mana_cost: c.mana_cost });
+    }
+  }
+  return map;
+}
+
 // Route handler type
 type RouteHandler = (request: Request, env: Env, params: Record<string, string>) => Promise<Response>;
 
@@ -256,33 +299,47 @@ addRoute('POST', '/api/decks', async (request, env) => {
   return jsonResponse({ id: deckId, name, owner: owner_username.toLowerCase() }, 201);
 });
 
-// Get deck by ID (with card list as scryfall_ids)
-addRoute('GET', '/api/decks/:id', async (_request, env, params) => {
+// Get deck by ID (with card list as scryfall_ids). ?with_names=1 resolves names via Scryfall server-side.
+addRoute('GET', '/api/decks/:id', async (request, env, params) => {
   const deckId = parseInt(params.id);
-  
+  const url = new URL(request.url);
+  const withNames = url.searchParams.get('with_names') === '1';
+
   const deck = await env.DB.prepare(`
     SELECT * FROM deck_summary WHERE id = ?
   `).bind(deckId).first();
-  
+
   if (!deck) {
     return jsonResponse({ error: 'Deck not found' }, 404);
   }
 
-  // Get deck cards (just scryfall_ids and metadata)
-  const cards = await env.DB.prepare(`
+  const cardsResult = await env.DB.prepare(`
     SELECT scryfall_id, quantity, is_sideboard, is_commander
     FROM deck_cards
     WHERE deck_id = ?
   `).bind(deckId).all();
 
-  // Get deck owners
+  let cards = cardsResult.results as Array<{ scryfall_id: string; quantity: number; is_sideboard: number; is_commander: number }>;
+  if (withNames && cards.length > 0) {
+    const uniqueIds = [...new Set(cards.map((c) => c.scryfall_id))];
+    const nameMap = await fetchCardNamesFromScryfall(uniqueIds);
+    cards = cards.map((c) => {
+      const info = nameMap.get(c.scryfall_id);
+      return {
+        ...c,
+        name: info?.name ?? c.scryfall_id,
+        mana_cost: info?.mana_cost ?? undefined,
+      };
+    });
+  }
+
   const owners = await env.DB.prepare(`
     SELECT username, role FROM deck_owners WHERE deck_id = ?
   `).bind(deckId).all();
 
   return jsonResponse({
     ...deck,
-    cards: cards.results,
+    cards,
     owners: owners.results,
   });
 });
@@ -335,6 +392,27 @@ addRoute('DELETE', '/api/decks/:id', async (_request, env, params) => {
   await env.DB.prepare('DELETE FROM decks WHERE id = ?').bind(deckId).run();
   
   return jsonResponse({ deleted: true });
+});
+
+// Resolve deck list (card names -> scryfall_id + name) via Scryfall server-side. Use when client cannot reach Scryfall.
+addRoute('POST', '/api/decks/resolve-list', async (request) => {
+  const { cards } = await parseBody<{ cards: Array<{ quantity: number; name: string; set?: string }> }>(request);
+  if (!cards || !Array.isArray(cards) || cards.length === 0) {
+    return jsonResponse({ error: 'cards array required' }, 400);
+  }
+  const resolved: Array<{ scryfall_id: string; name: string; quantity: number }> = [];
+  const not_found: string[] = [];
+  for (const item of cards) {
+    const name = (item.name ?? '').trim();
+    if (!name) continue;
+    const card = await fetchCardByName(name, item.set);
+    if (card) {
+      resolved.push({ scryfall_id: card.id, name: card.name, quantity: Math.max(1, Number(item.quantity) || 1) });
+    } else {
+      not_found.push(name);
+    }
+  }
+  return jsonResponse({ resolved, not_found });
 });
 
 // Add card to deck
@@ -424,6 +502,260 @@ addRoute('POST', '/api/decks/:id/share', async (request, env, params) => {
   } catch (e) {
     return jsonResponse({ error: 'Failed to share deck' }, 400);
   }
+});
+
+// ============================================
+// REMOTE PLAY (SpellTable-style, low-bandwidth friendly)
+// ============================================
+
+function generateJoinCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 5; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+// Create play session
+addRoute('POST', '/api/play/sessions', async (request, env) => {
+  const { host_username, game_type, settings } = await parseBody<{
+    host_username: string;
+    game_type?: string;
+    settings?: string;
+  }>(request);
+
+  if (!host_username) {
+    return jsonResponse({ error: 'host_username is required' }, 400);
+  }
+
+  const gameType = game_type || 'mtg';
+  const startingLife = gameType === 'mtg' ? 40 : null;
+  const settingsJson = settings || JSON.stringify(gameType === 'mtg' ? { starting_life: 40 } : {});
+
+  let joinCode = generateJoinCode();
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const existing = await env.DB.prepare(
+      'SELECT id FROM play_sessions WHERE join_code = ?'
+    ).bind(joinCode).first();
+    if (!existing) break;
+    joinCode = generateJoinCode();
+  }
+
+  const result = await env.DB.prepare(`
+    INSERT INTO play_sessions (join_code, game_type, host_username, settings)
+    VALUES (?, ?, ?, ?)
+  `).bind(joinCode, gameType, host_username.toLowerCase(), settingsJson).run();
+
+  const sessionId = result.meta.last_row_id as number;
+
+  await env.DB.prepare(`
+    INSERT INTO play_participants (session_id, username, seat_index, life_total)
+    VALUES (?, ?, 0, ?)
+  `).bind(sessionId, host_username.toLowerCase(), startingLife).run();
+
+  return jsonResponse({
+    id: sessionId,
+    join_code: joinCode,
+    game_type: gameType,
+    host_username: host_username.toLowerCase(),
+    settings: settingsJson,
+    created: true,
+  }, 201);
+});
+
+// Get session by join code (full state for polling)
+addRoute('GET', '/api/play/sessions/:code', async (_request, env, params) => {
+  const code = (params.code || '').toUpperCase();
+  const session = await env.DB.prepare(
+    'SELECT id, join_code, game_type, host_username, settings, created_at, updated_at FROM play_sessions WHERE join_code = ?'
+  ).bind(code).first();
+
+  if (!session) {
+    return jsonResponse({ error: 'Session not found' }, 404);
+  }
+
+  const participants = await env.DB.prepare(`
+    SELECT username, seat_index, life_total, joined_at
+    FROM play_participants WHERE session_id = ?
+    ORDER BY seat_index, joined_at
+  `).bind((session as { id: number }).id).all();
+
+  const url = new URL(_request.url);
+  const sinceId = url.searchParams.get('since');
+  let actions: D1Result;
+  if (sinceId) {
+    actions = await env.DB.prepare(`
+      SELECT id, username, action_type, payload, created_at
+      FROM play_actions WHERE session_id = ? AND id > ?
+      ORDER BY id ASC LIMIT 100
+    `).bind((session as { id: number }).id, parseInt(sinceId, 10)).all();
+  } else {
+    actions = await env.DB.prepare(`
+      SELECT id, username, action_type, payload, created_at
+      FROM play_actions WHERE session_id = ?
+      ORDER BY id DESC LIMIT 50
+    `).bind((session as { id: number }).id).all();
+    (actions as { results: unknown[] }).results.reverse();
+  }
+
+  return jsonResponse({
+    ...session,
+    participants: participants.results,
+    actions: actions.results,
+  });
+});
+
+// Join session
+addRoute('POST', '/api/play/sessions/:code/join', async (request, env, params) => {
+  const code = (params.code || '').toUpperCase();
+  const { username } = await parseBody<{ username: string }>(request);
+
+  if (!username) {
+    return jsonResponse({ error: 'username is required' }, 400);
+  }
+
+  const session = await env.DB.prepare(
+    'SELECT id, game_type, settings FROM play_sessions WHERE join_code = ?'
+  ).bind(code).first();
+
+  if (!session) {
+    return jsonResponse({ error: 'Session not found' }, 404);
+  }
+
+  const sid = (session as { id: number }).id;
+  const gameType = (session as { game_type: string }).game_type;
+  const settings = (session as { settings: string | null }).settings;
+  let startingLife: number | null = null;
+  if (gameType === 'mtg' && settings) {
+    try {
+      const s = JSON.parse(settings) as { starting_life?: number };
+      startingLife = s.starting_life ?? 40;
+    } catch {
+      startingLife = 40;
+    }
+  }
+
+  const existing = await env.DB.prepare(
+    'SELECT username FROM play_participants WHERE session_id = ? AND username = ?'
+  ).bind(sid, username.toLowerCase()).first();
+
+  if (existing) {
+    return jsonResponse({ session_id: sid, join_code: code, joined: true, already_in: true });
+  }
+
+  const maxSeat = await env.DB.prepare(
+    'SELECT COALESCE(MAX(seat_index), -1) as mx FROM play_participants WHERE session_id = ?'
+  ).bind(sid).first();
+  const seatIndex = ((maxSeat as { mx: number })?.mx ?? -1) + 1;
+
+  await env.DB.prepare(`
+    INSERT INTO play_participants (session_id, username, seat_index, life_total)
+    VALUES (?, ?, ?, ?)
+  `).bind(sid, username.toLowerCase(), seatIndex, startingLife).run();
+
+  await env.DB.prepare(
+    'UPDATE play_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+  ).bind(sid).run();
+
+  return jsonResponse({ session_id: sid, join_code: code, joined: true }, 201);
+});
+
+// Leave session
+addRoute('POST', '/api/play/sessions/:code/leave', async (request, env, params) => {
+  const code = (params.code || '').toUpperCase();
+  const { username } = await parseBody<{ username: string }>(request);
+
+  if (!username) {
+    return jsonResponse({ error: 'username is required' }, 400);
+  }
+
+  const session = await env.DB.prepare(
+    'SELECT id FROM play_sessions WHERE join_code = ?'
+  ).bind(code).first();
+
+  if (!session) {
+    return jsonResponse({ error: 'Session not found' }, 404);
+  }
+
+  await env.DB.prepare(
+    'DELETE FROM play_participants WHERE session_id = ? AND username = ?'
+  ).bind((session as { id: number }).id, username.toLowerCase()).run();
+
+  return jsonResponse({ left: true });
+});
+
+// Submit action (play card, set life, pass turn, chat, etc.)
+addRoute('POST', '/api/play/sessions/:code/actions', async (request, env, params) => {
+  const code = (params.code || '').toUpperCase();
+  const { username, action_type, payload } = await parseBody<{
+    username: string;
+    action_type: string;
+    payload?: string | Record<string, unknown>;
+  }>(request);
+
+  if (!username || !action_type) {
+    return jsonResponse({ error: 'username and action_type are required' }, 400);
+  }
+
+  const session = await env.DB.prepare(
+    'SELECT id FROM play_sessions WHERE join_code = ?'
+  ).bind(code).first();
+
+  if (!session) {
+    return jsonResponse({ error: 'Session not found' }, 404);
+  }
+
+  const sid = (session as { id: number }).id;
+  const participant = await env.DB.prepare(
+    'SELECT username FROM play_participants WHERE session_id = ? AND username = ?'
+  ).bind(sid, username.toLowerCase()).first();
+
+  if (!participant) {
+    return jsonResponse({ error: 'Not a participant in this session' }, 403);
+  }
+
+  const payloadStr = typeof payload === 'string' ? payload : (payload ? JSON.stringify(payload) : null);
+
+  await env.DB.prepare(`
+    INSERT INTO play_actions (session_id, username, action_type, payload)
+    VALUES (?, ?, ?, ?)
+  `).bind(sid, username.toLowerCase(), action_type, payloadStr).run();
+
+  await env.DB.prepare(
+    'UPDATE play_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+  ).bind(sid).run();
+
+  return jsonResponse({ action_submitted: true });
+});
+
+// Update life total (MTG)
+addRoute('PUT', '/api/play/sessions/:code/players/:username/life', async (request, env, params) => {
+  const code = (params.code || '').toUpperCase();
+  const usernameParam = params.username;
+  const { life_total } = await parseBody<{ life_total: number }>(request);
+
+  if (life_total == null || typeof life_total !== 'number') {
+    return jsonResponse({ error: 'life_total is required' }, 400);
+  }
+
+  const session = await env.DB.prepare(
+    'SELECT id FROM play_sessions WHERE join_code = ?'
+  ).bind(code).first();
+
+  if (!session) {
+    return jsonResponse({ error: 'Session not found' }, 404);
+  }
+
+  const result = await env.DB.prepare(`
+    UPDATE play_participants SET life_total = ? WHERE session_id = ? AND username = ?
+  `).bind(life_total, (session as { id: number }).id, usernameParam).run();
+
+  if (result.meta.changes === 0) {
+    return jsonResponse({ error: 'Participant not found' }, 404);
+  }
+
+  return jsonResponse({ updated: true, life_total });
 });
 
 // ============================================

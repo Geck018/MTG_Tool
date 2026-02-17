@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { HomePage, type GameType } from './components/HomePage';
 import { MTGApp } from './components/MTGApp';
 import { WarhammerApp } from './components/WarhammerApp';
+import { RemotePlayApp } from './components/RemotePlayApp';
 import { RulesChat } from './components/RulesChat';
 import { LoginSignup, UserMenu } from './components/LoginSignup';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -18,6 +19,8 @@ function AppContent() {
       setCurrentGame('mtg');
     } else if (hash.startsWith('#/warhammer')) {
       setCurrentGame('warhammer');
+    } else if (hash.startsWith('#/play')) {
+      setCurrentGame('play');
     } else if (hash.startsWith('#/rules')) {
       setCurrentGame('rules');
     } else {
@@ -31,6 +34,8 @@ function AppContent() {
         setCurrentGame('mtg');
       } else if (hash.startsWith('#/warhammer')) {
         setCurrentGame('warhammer');
+      } else if (hash.startsWith('#/play')) {
+        setCurrentGame('play');
       } else if (hash.startsWith('#/rules')) {
         setCurrentGame('rules');
       } else {
@@ -72,7 +77,9 @@ function AppContent() {
   }
 
   return (
-    <div className="tabletop-tools">
+    <div className="tabletop-tools" data-game={currentGame}>
+      {/* Game-themed background (art + overlay) */}
+      <div className="game-bg" aria-hidden="true" />
       {/* Global user menu */}
       <div className="global-header">
         <UserMenu />
@@ -86,6 +93,9 @@ function AppContent() {
       )}
       {currentGame === 'warhammer' && (
         <WarhammerApp onBack={handleBackToHome} />
+      )}
+      {currentGame === 'play' && (
+        <RemotePlayApp onBack={handleBackToHome} />
       )}
       {currentGame === 'rules' && (
         <div className="rules-page">

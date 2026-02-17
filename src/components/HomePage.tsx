@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export type GameType = 'home' | 'mtg' | 'warhammer' | 'rules';
+export type GameType = 'home' | 'mtg' | 'warhammer' | 'rules' | 'play';
 
 interface GameOption {
   id: GameType;
@@ -39,6 +39,13 @@ interface ToolOption {
 }
 
 const TOOLS: ToolOption[] = [
+  {
+    id: 'play',
+    name: 'Remote Play',
+    description: 'Play MTG remotely with your own cards. No video — type the card you play. Works on slow connections.',
+    icon: '🖥️',
+    color: '#0ea5e9'
+  },
   {
     id: 'rules',
     name: 'Rules Assistant',
