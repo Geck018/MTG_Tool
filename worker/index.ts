@@ -54,6 +54,52 @@ async function fetchCardByName(name: string, set?: string): Promise<{ id: string
   return { id: card.id, name: card.name };
 }
 
+/** Resolve many cards by name/set in one or few subrequests (Scryfall collection API, max 75 per request). */
+async function fetchCardsByNamesBatch(
+  items: Array<{ name: string; set?: string; quantity?: number }>
+): Promise<{ resolved: Array<{ id: string; name: string; quantity: number }>; not_found: string[] }> {
+  const resolved: Array<{ id: string; name: string; quantity: number }> = [];
+  const not_found: string[] = [];
+  for (let i = 0; i < items.length; i += SCRYFALL_BATCH_SIZE) {
+    const chunk = items.slice(i, i + SCRYFALL_BATCH_SIZE);
+    const identifiers = chunk.map((item) => {
+      const name = (item.name ?? '').trim();
+      const set = item.set && /^[a-zA-Z0-9]{2,5}$/.test(item.set) ? item.set.toLowerCase() : undefined;
+      return set ? { name, set } : { name };
+    });
+    const body = JSON.stringify({ identifiers });
+    const res = await fetch(SCRYFALL_COLLECTION, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    if (!res.ok) continue;
+    const json = (await res.json()) as {
+      data?: Array<{ id: string; name: string }>;
+      not_found?: Array<{ name?: string; set?: string }>;
+    };
+    const data = json.data ?? [];
+    const nf = json.not_found ?? [];
+    let dataIdx = 0;
+    for (let j = 0; j < chunk.length; j++) {
+      const item = chunk[j];
+      const qty = Math.max(1, Number(item.quantity) || 1);
+      const name = (item.name ?? '').trim();
+      if (!name) continue;
+      const inNf = nf.some(
+        (n) => n.name === name && (n.set || '') === (item.set?.toLowerCase() || '')
+      );
+      if (inNf) {
+        not_found.push(name);
+      } else {
+        const card = data[dataIdx++];
+        if (card) resolved.push({ id: card.id, name: card.name, quantity: qty });
+      }
+    }
+  }
+  return { resolved, not_found };
+}
+
 /** Fetch card name (and mana_cost) for scryfall_ids from Scryfall API. Server-side only. */
 async function fetchCardNamesFromScryfall(scryfallIds: string[]): Promise<Map<string, { name: string; mana_cost?: string }>> {
   const map = new Map<string, { name: string; mana_cost?: string }>();
@@ -394,24 +440,17 @@ addRoute('DELETE', '/api/decks/:id', async (_request, env, params) => {
   return jsonResponse({ deleted: true });
 });
 
-// Resolve deck list (card names -> scryfall_id + name) via Scryfall server-side. Use when client cannot reach Scryfall.
+// Resolve deck list (card names -> scryfall_id + name) via Scryfall server-side. Batched to avoid subrequest limit.
 addRoute('POST', '/api/decks/resolve-list', async (request) => {
   const { cards } = await parseBody<{ cards: Array<{ quantity: number; name: string; set?: string }> }>(request);
   if (!cards || !Array.isArray(cards) || cards.length === 0) {
     return jsonResponse({ error: 'cards array required' }, 400);
   }
-  const resolved: Array<{ scryfall_id: string; name: string; quantity: number }> = [];
-  const not_found: string[] = [];
-  for (const item of cards) {
-    const name = (item.name ?? '').trim();
-    if (!name) continue;
-    const card = await fetchCardByName(name, item.set);
-    if (card) {
-      resolved.push({ scryfall_id: card.id, name: card.name, quantity: Math.max(1, Number(item.quantity) || 1) });
-    } else {
-      not_found.push(name);
-    }
-  }
+  const items = cards
+    .filter((item) => (item.name ?? '').trim())
+    .map((item) => ({ name: (item.name ?? '').trim(), set: item.set, quantity: item.quantity }));
+  const { resolved: batchResolved, not_found } = await fetchCardsByNamesBatch(items);
+  const resolved = batchResolved.map((r) => ({ scryfall_id: r.id, name: r.name, quantity: r.quantity }));
   return jsonResponse({ resolved, not_found });
 });
 

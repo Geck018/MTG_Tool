@@ -14,6 +14,7 @@ import { CommanderDeckGenerator } from './CommanderDeckGenerator';
 import { DeckAnalysis } from './DeckAnalysis';
 import { CardScanner } from './CardScanner';
 import { ScryfallService } from '../services/scryfall';
+import { deckApi } from '../services/api';
 import { MECHANICS, FORMATS } from '../services/deckGenerator';
 import type { Card } from '../types';
 import type { GeneratedDeck } from '../services/deckGenerator';
@@ -29,6 +30,30 @@ export function MTGApp({ onBack }: MTGAppProps) {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [collectionUpdateKey, setCollectionUpdateKey] = useState(0);
   const [showScanner, setShowScanner] = useState(false);
+
+  const handleLoadDeck = async (deckId: number) => {
+    try {
+      const deckWithCards = await deckApi.get(deckId, true);
+      clearDeck();
+      setDeckName(deckWithCards.name);
+      const BATCH = 15;
+      for (let i = 0; i < deckWithCards.cards.length; i += BATCH) {
+        const batch = deckWithCards.cards.slice(i, i + BATCH);
+        const cards = await Promise.all(
+          batch.map((c) => ScryfallService.getCardById(c.scryfall_id))
+        );
+        for (let j = 0; j < batch.length; j++) {
+          const card = cards[j];
+          if (card) {
+            addCard(card, batch[j].quantity, batch[j].is_sideboard);
+          }
+        }
+      }
+      setActiveTab('build');
+    } catch (err) {
+      console.error('Failed to load deck:', err);
+    }
+  };
 
   // Handle URL routing for card details
   useEffect(() => {
@@ -225,7 +250,7 @@ export function MTGApp({ onBack }: MTGAppProps) {
         )}
 
         {activeTab === 'collection' && (
-          <CollectionViewer key={collectionUpdateKey} />
+          <CollectionViewer key={collectionUpdateKey} onLoadDeck={handleLoadDeck} />
         )}
 
         {activeTab === 'generate' && (
@@ -269,7 +294,7 @@ export function MTGApp({ onBack }: MTGAppProps) {
         )}
 
         {activeTab === 'validate' && (
-          <DeckValidator deck={deck} />
+          <DeckValidator />
         )}
 
         {activeTab === 'keywords' && (
@@ -277,9 +302,7 @@ export function MTGApp({ onBack }: MTGAppProps) {
         )}
 
         {activeTab === 'analysis' && (
-          <DeckAnalysis onDeckAnalyzed={(_importedDeck) => {
-            // Optionally load the analyzed deck into the builder
-          }} />
+          <DeckAnalysis />
         )}
       </main>
 

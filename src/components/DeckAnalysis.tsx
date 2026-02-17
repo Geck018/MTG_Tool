@@ -1,101 +1,94 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Deck, DeckCard } from '../types';
 import { DeckAnalysisService, type DeckAnalysisResult } from '../services/deckAnalysis';
-import { CSVService } from '../utils/csv';
+import { useAuth } from '../contexts/AuthContext';
+import { userApi, deckApi } from '../services/api';
 import { ScryfallService } from '../services/scryfall';
+import type { UserDeck } from '../database/types';
 
-interface DeckAnalysisProps {
-  onDeckAnalyzed?: (deck: Deck) => void;
-}
-
-export function DeckAnalysis({ onDeckAnalyzed }: DeckAnalysisProps) {
-  const [deckText, setDeckText] = useState('');
+export function DeckAnalysis() {
+  const { user } = useAuth();
+  const [myDecks, setMyDecks] = useState<UserDeck[]>([]);
+  const [selectedDeckId, setSelectedDeckId] = useState<number | ''>('');
+  const [loadedDeck, setLoadedDeck] = useState<Deck | null>(null);
+  const [decksLoading, setDecksLoading] = useState(true);
+  const [deckLoading, setDeckLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [format, setFormat] = useState('standard');
   const [analysis, setAnalysis] = useState<DeckAnalysisResult | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [activeSection, setActiveSection] = useState<'overview' | 'synergy' | 'strategy' | 'winconditions' | 'collection' | 'purchases'>('overview');
 
-  const parseDeckList = (text: string): Array<{ quantity: number; name: string }> => {
-    const lines = text.trim().split('\n');
-    const cards: Array<{ quantity: number; name: string }> = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('//')) continue;
-
-      if (trimmed.toLowerCase().includes('sideboard') || trimmed === 'SB:') {
-        continue;
-      }
-
-      const match = trimmed.match(/^(\d+)\s*x?\s*(.+)$/);
-      if (match) {
-        cards.push({
-          quantity: parseInt(match[1]),
-          name: match[2].trim()
-        });
-      }
-    }
-
-    return cards;
-  };
-
-  const handleAnalyze = async () => {
-    if (!deckText.trim()) {
-      setMessage({ type: 'error', text: 'Please paste deck list or upload a file' });
+  useEffect(() => {
+    if (!user?.username) {
+      setMyDecks([]);
+      setDecksLoading(false);
       return;
     }
+    setDecksLoading(true);
+    userApi.getDecks(user.username)
+      .then(setMyDecks)
+      .catch(() => setMyDecks([]))
+      .finally(() => setDecksLoading(false));
+  }, [user?.username]);
 
+  useEffect(() => {
+    if (selectedDeckId === '') {
+      setLoadedDeck(null);
+      return;
+    }
+    setDeckLoading(true);
+    setLoadedDeck(null);
+    setAnalysis(null);
+    (async () => {
+      try {
+        const deckWithCards = await deckApi.get(selectedDeckId as number, true);
+        const BATCH = 15;
+        const main: DeckCard[] = [];
+        const sideboard: DeckCard[] = [];
+        const mainCards = deckWithCards.cards.filter((c) => !c.is_sideboard);
+        const sbCards = deckWithCards.cards.filter((c) => c.is_sideboard);
+        for (let i = 0; i < mainCards.length; i += BATCH) {
+          const batch = mainCards.slice(i, i + BATCH);
+          const cards = await Promise.all(batch.map((c) => ScryfallService.getCardById(c.scryfall_id)));
+          for (let j = 0; j < batch.length; j++) {
+            const card = cards[j];
+            if (card) main.push({ card, quantity: batch[j].quantity });
+          }
+        }
+        for (let i = 0; i < sbCards.length; i += BATCH) {
+          const batch = sbCards.slice(i, i + BATCH);
+          const cards = await Promise.all(batch.map((c) => ScryfallService.getCardById(c.scryfall_id)));
+          for (let j = 0; j < batch.length; j++) {
+            const card = cards[j];
+            if (card) sideboard.push({ card, quantity: batch[j].quantity });
+          }
+        }
+        setLoadedDeck({
+          name: deckWithCards.name,
+          cards: main,
+          sideboard,
+          wishlist: []
+        });
+      } catch {
+        setLoadedDeck(null);
+      } finally {
+        setDeckLoading(false);
+      }
+    })();
+  }, [selectedDeckId]);
+
+  const handleAnalyze = async () => {
+    if (!loadedDeck) return;
     setLoading(true);
     setMessage(null);
     setAnalysis(null);
-
     try {
-      let deckCards: DeckCard[] = [];
-      let sideboardCards: DeckCard[] = [];
-
-      if (deckText.includes(',')) {
-        deckCards = await CSVService.parseDeckCSV(deckText);
-      } else {
-        const parsedCards = parseDeckList(deckText);
-        let foundSideboard = false;
-
-        for (const parsedCard of parsedCards) {
-          const card = await ScryfallService.getCardByName(parsedCard.name);
-          if (card) {
-            if (foundSideboard) {
-              sideboardCards.push({ card, quantity: parsedCard.quantity });
-            } else {
-              deckCards.push({ card, quantity: parsedCard.quantity });
-            }
-          }
-        }
-      }
-
-      if (deckCards.length === 0 && sideboardCards.length === 0) {
-        setMessage({ type: 'error', text: 'No valid cards found. Please check the format.' });
-        setLoading(false);
-        return;
-      }
-
-      const deck: Deck = {
-        name: 'Analyzed Deck',
-        cards: deckCards,
-        sideboard: sideboardCards,
-        wishlist: []
-      };
-
-      // Perform analysis
-      const analysisResult = await DeckAnalysisService.analyzeDeck(deck, format);
+      const analysisResult = await DeckAnalysisService.analyzeDeck(loadedDeck, format);
       setAnalysis(analysisResult);
-
-      if (onDeckAnalyzed) {
-        onDeckAnalyzed(deck);
-      }
-
       setMessage({
         type: 'success',
-        text: `Analysis complete! Found ${deckCards.length} main deck cards.`
+        text: `Analysis complete! ${loadedDeck.cards.length} main deck cards.`
       });
     } catch (error) {
       setMessage({
@@ -107,27 +100,53 @@ export function DeckAnalysis({ onDeckAnalyzed }: DeckAnalysisProps) {
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      setDeckText(text);
-    };
-    reader.readAsText(file);
-  };
-
   return (
     <div className="deck-analysis-panel">
       <h2 className="panel-title">Deck Analysis</h2>
       <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-        Import a constructed deck to analyze legality, synergy, strategy, and get improvement recommendations.
+        Select a deck you’ve already imported to analyze legality, synergy, strategy, and get improvement recommendations.
       </p>
 
-      {!analysis && (
+      {(!analysis || !loadedDeck) && (
         <div className="analysis-input-section">
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
+              Deck:
+            </label>
+            <select
+              value={selectedDeckId === '' ? '' : selectedDeckId}
+              onChange={(e) => setSelectedDeckId(e.target.value === '' ? '' : Number(e.target.value))}
+              disabled={decksLoading}
+              style={{
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border)',
+                color: 'var(--text-primary)',
+                padding: '0.5rem 1rem',
+                borderRadius: '8px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                minWidth: '200px'
+              }}
+            >
+              <option value="">Select a deck…</option>
+              {myDecks.map((d) => (
+                <option key={d.deck_id} value={d.deck_id}>
+                  {d.deck_name} ({d.card_count} cards)
+                </option>
+              ))}
+            </select>
+            {decksLoading && <span style={{ marginLeft: '0.5rem', color: 'var(--text-secondary)' }}>Loading…</span>}
+            {!decksLoading && myDecks.length === 0 && (
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                No saved decks. Import a deck first from the Import Deck tab.
+              </p>
+            )}
+          </div>
+
+          {deckLoading && (
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>Loading deck cards…</p>
+          )}
+
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
               Format:
@@ -156,35 +175,10 @@ export function DeckAnalysis({ onDeckAnalyzed }: DeckAnalysisProps) {
             </select>
           </div>
 
-          <div className="file-input-wrapper" style={{ marginBottom: '1rem' }}>
-            <label className="file-input-label">
-              📁 Upload Deck File
-              <input
-                type="file"
-                accept=".txt,.csv"
-                className="file-input"
-                onChange={handleFileUpload}
-              />
-            </label>
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>
-              Or paste deck list:
-            </label>
-            <textarea
-              className="import-textarea"
-              value={deckText}
-              onChange={(e) => setDeckText(e.target.value)}
-              placeholder="2 Lightning Bolt&#10;4 Counterspell&#10;20 Island"
-              style={{ minHeight: '150px' }}
-            />
-          </div>
-
           <button
             className="btn"
             onClick={handleAnalyze}
-            disabled={loading || !deckText.trim()}
+            disabled={loading || !loadedDeck || deckLoading}
           >
             {loading ? 'Analyzing...' : 'Analyze Deck'}
           </button>
@@ -199,6 +193,15 @@ export function DeckAnalysis({ onDeckAnalyzed }: DeckAnalysisProps) {
 
       {analysis && (
         <div className="analysis-results">
+          <div style={{ marginBottom: '1rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setAnalysis(null)}
+            >
+              ← Select another deck
+            </button>
+          </div>
           <div className="analysis-tabs" style={{
             display: 'flex',
             gap: '0.5rem',
@@ -777,7 +780,6 @@ export function DeckAnalysis({ onDeckAnalyzed }: DeckAnalysisProps) {
               className="btn"
               onClick={() => {
                 setAnalysis(null);
-                setDeckText('');
                 setMessage(null);
               }}
             >

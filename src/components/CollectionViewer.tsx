@@ -2,9 +2,16 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import type { BulkCard } from '../types';
 import { CollectionService } from '../utils/collection';
 import { ScryfallService } from '../services/scryfall';
+import { userApi } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import type { Card } from '../types';
+import type { UserDeck } from '../database/types';
 import { CardDetail } from './CardDetail';
 import { getCardCategory, getCategoryOrder, ALL_CATEGORIES, type CardCategory } from '../utils/cardCategories';
+
+interface CollectionViewerProps {
+  onLoadDeck?: (deckId: number) => void;
+}
 
 interface CollectionCard extends BulkCard {
   cardData?: Card;
@@ -15,16 +22,39 @@ interface CollectionCard extends BulkCard {
 type SortOption = 'name' | 'cmc' | 'rarity' | 'set' | 'quantity';
 type ViewMode = 'tile' | 'list';
 
-export function CollectionViewer() {
+export function CollectionViewer({ onLoadDeck }: CollectionViewerProps = {}) {
+  const { user } = useAuth();
   const [collection, setCollection] = useState<CollectionCard[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<CardCategory | 'All'>('All');
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [viewMode, setViewMode] = useState<ViewMode>('tile');
+  const [myDecks, setMyDecks] = useState<UserDeck[]>([]);
+  const [decksLoading, setDecksLoading] = useState(false);
+  const [decksError, setDecksError] = useState<string | null>(null);
   const loadingRef = useRef(false);
   const mountedRef = useRef(true);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load user's decks (all decks: created or imported/saved)
+  useEffect(() => {
+    if (!user?.username) {
+      setMyDecks([]);
+      return;
+    }
+    setDecksLoading(true);
+    setDecksError(null);
+    userApi.getDecks(user.username)
+      .then((decks) => {
+        setMyDecks(decks);
+      })
+      .catch((err) => {
+        setDecksError(err?.message || 'Failed to load decks');
+        setMyDecks([]);
+      })
+      .finally(() => setDecksLoading(false));
+  }, [user?.username]);
   
   // Cleanup on unmount
   useEffect(() => {
@@ -277,6 +307,38 @@ export function CollectionViewer() {
           )}
         </div>
       </div>
+
+      {/* My Decks: all saved decks (including imported) */}
+      <section className="my-decks-section">
+        <h3 className="my-decks-title">My Decks</h3>
+        {decksLoading ? (
+          <p className="my-decks-message">Loading decks...</p>
+        ) : decksError ? (
+          <p className="my-decks-message my-decks-error">{decksError}</p>
+        ) : myDecks.length === 0 ? (
+          <p className="my-decks-message">No saved decks yet. Build a deck and save it to see it here.</p>
+        ) : (
+          <ul className="my-decks-list">
+            {myDecks.map((d) => (
+              <li key={d.deck_id} className="my-decks-item">
+                <span className="my-decks-item-name">{d.deck_name}</span>
+                <span className="my-decks-item-meta">
+                  {d.format} · {d.card_count} cards
+                </span>
+                {onLoadDeck && (
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    onClick={() => onLoadDeck(d.deck_id)}
+                  >
+                    Load
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <div className="collection-controls">
         <input

@@ -165,6 +165,25 @@ export class ScryfallService {
     return results;
   }
 
+  /** Fetch a single card by Scryfall ID (e.g. from API deck cards). */
+  static async getCardById(scryfallId: string): Promise<Card | null> {
+    this.initCache();
+    if (this.cache.has(scryfallId)) {
+      return this.cache.get(scryfallId)!;
+    }
+    try {
+      const response = await fetch(`${SCRYFALL_API}/cards/${encodeURIComponent(scryfallId)}`);
+      if (!response.ok) return null;
+      const card = await response.json();
+      this.cache.set(scryfallId, card);
+      this.saveCache();
+      return card;
+    } catch (error) {
+      console.error('Error fetching card by id:', error);
+      return null;
+    }
+  }
+
   static async getCardBySetAndNumber(set: string, number: string): Promise<Card | null> {
     try {
       const response = await fetch(

@@ -887,6 +887,70 @@ body {
   font-size: 0.9rem;
 }
 
+/* My Decks section (all saved decks, including imported) */
+.my-decks-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.my-decks-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  color: var(--text-primary);
+}
+
+.my-decks-message {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.my-decks-message.my-decks-error {
+  color: var(--danger, #e74c3c);
+}
+
+.my-decks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.my-decks-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.my-decks-item:last-child {
+  border-bottom: none;
+}
+
+.my-decks-item-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 0;
+  flex: 1;
+}
+
+.my-decks-item-meta {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.my-decks-item .btn-small {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
 .collection-controls {
   display: flex;
   gap: 1rem;
