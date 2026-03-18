@@ -64,23 +64,30 @@ export interface DeckAnalysisResult {
 
 export class DeckAnalysisService {
   static async analyzeDeck(deck: Deck, format: string = 'standard'): Promise<DeckAnalysisResult> {
+    const safeDeck: Deck = {
+      ...deck,
+      cards: Array.isArray(deck.cards) ? deck.cards.filter((dc) => dc && dc.card) : [],
+      sideboard: Array.isArray(deck.sideboard) ? deck.sideboard.filter((dc) => dc && dc.card) : [],
+      wishlist: Array.isArray(deck.wishlist) ? deck.wishlist.filter((dc) => dc && dc.card) : []
+    };
+
     // 1. Check legality
-    const validation = DeckValidator.validate(deck, format);
+    const validation = DeckValidator.validate(safeDeck, format);
     
     // 2. Analyze synergies
-    const synergies = await this.analyzeSynergies(deck);
+    const synergies = await this.analyzeSynergies(safeDeck);
     
     // 3. Generate strategy writeup
-    const strategy = this.analyzeStrategy(deck);
+    const strategy = this.analyzeStrategy(safeDeck);
     
     // 4. Analyze win conditions
-    const winConditions = this.analyzeWinConditions(deck);
+    const winConditions = this.analyzeWinConditions(safeDeck);
     
     // 5. Check collection for improvements
-    const collectionImprovements = await this.findCollectionImprovements(deck);
+    const collectionImprovements = await this.findCollectionImprovements(safeDeck);
     
     // 6. Recommend cards to buy
-    const purchaseRecommendations = await this.generatePurchaseRecommendations(deck, strategy, synergies);
+    const purchaseRecommendations = await this.generatePurchaseRecommendations(safeDeck, strategy, synergies);
     
     return {
       legality: {

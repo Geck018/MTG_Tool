@@ -34,32 +34,53 @@ async function parseBody<T>(request: Request): Promise<T> {
 const SCRYFALL_BASE = 'https://api.scryfall.com';
 const SCRYFALL_COLLECTION = `${SCRYFALL_BASE}/cards/collection`;
 const SCRYFALL_BATCH_SIZE = 75;
+const SCRYFALL_HEADERS = {
+  'Accept': 'application/json',
+  'Content-Type': 'application/json',
+  // Required by Scryfall API policy
+  'User-Agent': 'TabletopTools-MTGDeckBuilder/1.0 (https://tabletoptools.cc)',
+};
+/** Max fallback lookups per request. Each can be 2 subrequests; 2 chunks = 2 collection calls. Stay under Worker limit (~50). */
+const MAX_FALLBACK_PER_REQUEST = 12;
 
-/** Resolve a card by name (and optional set) via Scryfall. Server-side only. */
+/** Resolve a card by name (and optional set) via Scryfall. Max 2 subrequests (exact then fuzzy) to conserve limit. */
 async function fetchCardByName(name: string, set?: string): Promise<{ id: string; name: string } | null> {
   const isSetCode = set && /^[a-zA-Z0-9]{2,5}$/.test(set);
   let url = `${SCRYFALL_BASE}/cards/named?exact=${encodeURIComponent(name)}`;
   if (isSetCode) url += `&set=${encodeURIComponent(set.toLowerCase())}`;
-  let res = await fetch(url);
-  if (!res.ok && isSetCode) {
-    url = `${SCRYFALL_BASE}/cards/named?exact=${encodeURIComponent(name)}`;
-    res = await fetch(url);
-  }
+  let res = await fetch(url, { headers: SCRYFALL_HEADERS });
   if (!res.ok) {
     url = `${SCRYFALL_BASE}/cards/named?fuzzy=${encodeURIComponent(name)}`;
-    res = await fetch(url);
+    res = await fetch(url, { headers: SCRYFALL_HEADERS });
   }
   if (!res.ok) return null;
   const card = (await res.json()) as { id: string; name: string };
   return { id: card.id, name: card.name };
 }
 
-/** Resolve many cards by name/set in one or few subrequests (Scryfall collection API, max 75 per request). */
+async function ensureImportedDeckCardsTable(env: Env): Promise<void> {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS imported_deck_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      deck_id INTEGER NOT NULL,
+      raw_name TEXT NOT NULL,
+      quantity INTEGER DEFAULT 1,
+      is_sideboard INTEGER DEFAULT 0,
+      matched_scryfall_id TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (deck_id) REFERENCES decks(id) ON DELETE CASCADE,
+      FOREIGN KEY (matched_scryfall_id) REFERENCES cards(scryfall_id) ON DELETE SET NULL
+    )
+  `).run();
+}
+
+/** Resolve many cards by name/set. Uses collection API first, then exact/fuzzy named API for up to MAX_FALLBACK_PER_REQUEST not found (to stay under Worker subrequest limit). */
 async function fetchCardsByNamesBatch(
   items: Array<{ name: string; set?: string; quantity?: number }>
 ): Promise<{ resolved: Array<{ id: string; name: string; quantity: number }>; not_found: string[] }> {
   const resolved: Array<{ id: string; name: string; quantity: number }> = [];
   const not_found: string[] = [];
+  let fallbacksUsed = 0;
   for (let i = 0; i < items.length; i += SCRYFALL_BATCH_SIZE) {
     const chunk = items.slice(i, i + SCRYFALL_BATCH_SIZE);
     const identifiers = chunk.map((item) => {
@@ -70,30 +91,54 @@ async function fetchCardsByNamesBatch(
     const body = JSON.stringify({ identifiers });
     const res = await fetch(SCRYFALL_COLLECTION, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: SCRYFALL_HEADERS,
       body,
     });
-    if (!res.ok) continue;
-    const json = (await res.json()) as {
-      data?: Array<{ id: string; name: string }>;
-      not_found?: Array<{ name?: string; set?: string }>;
-    };
-    const data = json.data ?? [];
-    const nf = json.not_found ?? [];
+
+    let data: Array<{ id: string; name: string }> = [];
+    let nf: Array<{ name?: string; set?: string }> = [];
+    if (res.ok) {
+      const json = (await res.json()) as {
+        data?: Array<{ id: string; name: string }>;
+        not_found?: Array<{ name?: string; set?: string }>;
+      };
+      data = json.data ?? [];
+      nf = json.not_found ?? [];
+    }
+    // When collection API fails (rate limit, 5xx) or returns all not_found, resolve each card via named API
+    const fallbackItems: Array<{ name: string; set?: string; quantity: number }> = [];
     let dataIdx = 0;
     for (let j = 0; j < chunk.length; j++) {
       const item = chunk[j];
       const qty = Math.max(1, Number(item.quantity) || 1);
       const name = (item.name ?? '').trim();
       if (!name) continue;
+      if (!res.ok) {
+        fallbackItems.push({ name, set: item.set, quantity: qty });
+        continue;
+      }
       const inNf = nf.some(
-        (n) => n.name === name && (n.set || '') === (item.set?.toLowerCase() || '')
+        (n) => (n.name ?? '') === name && (n.set || '') === (item.set?.toLowerCase() || '')
       );
       if (inNf) {
-        not_found.push(name);
+        fallbackItems.push({ name, set: item.set, quantity: qty });
       } else {
         const card = data[dataIdx++];
         if (card) resolved.push({ id: card.id, name: card.name, quantity: qty });
+        else fallbackItems.push({ name, set: item.set, quantity: qty });
+      }
+    }
+    for (const item of fallbackItems) {
+      if (fallbacksUsed >= MAX_FALLBACK_PER_REQUEST) {
+        not_found.push(item.name);
+        continue;
+      }
+      fallbacksUsed++;
+      const card = await fetchCardByName(item.name, item.set);
+      if (card) {
+        resolved.push({ id: card.id, name: card.name, quantity: item.quantity });
+      } else {
+        not_found.push(item.name);
       }
     }
   }
@@ -108,7 +153,7 @@ async function fetchCardNamesFromScryfall(scryfallIds: string[]): Promise<Map<st
     const body = JSON.stringify({ identifiers: batch.map((id) => ({ id })) });
     const res = await fetch(SCRYFALL_COLLECTION, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: SCRYFALL_HEADERS,
       body,
     });
     if (!res.ok) continue;
@@ -345,6 +390,45 @@ addRoute('POST', '/api/decks', async (request, env) => {
   return jsonResponse({ id: deckId, name, owner: owner_username.toLowerCase() }, 201);
 });
 
+// Create deck from raw names only (no immediate Scryfall resolution).
+addRoute('POST', '/api/decks/import-raw', async (request, env) => {
+  const { name, owner_username, format, cards } = await parseBody<{
+    name: string;
+    owner_username: string;
+    format?: string;
+    cards: Array<{ name: string; quantity?: number; is_sideboard?: boolean }>;
+  }>(request);
+  if (!name || !owner_username || !Array.isArray(cards) || cards.length === 0) {
+    return jsonResponse({ error: 'name, owner_username, and cards are required' }, 400);
+  }
+
+  await ensureImportedDeckCardsTable(env);
+
+  const deckResult = await env.DB.prepare(`
+    INSERT INTO decks (name, format, description)
+    VALUES (?, ?, ?)
+  `).bind(name, format || 'casual', 'Raw imported deck').run();
+  const deckId = deckResult.meta.last_row_id as number;
+
+  await env.DB.prepare(`
+    INSERT INTO deck_owners (deck_id, username, role)
+    VALUES (?, ?, 'owner')
+  `).bind(deckId, owner_username.toLowerCase()).run();
+
+  const insertStmt = env.DB.prepare(`
+    INSERT INTO imported_deck_cards (deck_id, raw_name, quantity, is_sideboard, matched_scryfall_id)
+    VALUES (?, ?, ?, ?, NULL)
+  `);
+  for (const c of cards) {
+    const rawName = String(c.name ?? '').trim();
+    if (!rawName) continue;
+    const qty = Math.max(1, Number(c.quantity) || 1);
+    await insertStmt.bind(deckId, rawName, qty, c.is_sideboard ? 1 : 0).run();
+  }
+
+  return jsonResponse({ id: deckId, created: true }, 201);
+});
+
 // Get deck by ID (with card list as scryfall_ids). ?with_names=1 resolves names via Scryfall server-side.
 addRoute('GET', '/api/decks/:id', async (request, env, params) => {
   const deckId = parseInt(params.id);
@@ -388,6 +472,59 @@ addRoute('GET', '/api/decks/:id', async (request, env, params) => {
     cards,
     owners: owners.results,
   });
+});
+
+// Get unmatched imported cards for a user.
+addRoute('GET', '/api/users/:username/unmatched-cards', async (_request, env, params) => {
+  await ensureImportedDeckCardsTable(env);
+  const username = (params.username || '').toLowerCase();
+  const rows = await env.DB.prepare(`
+    SELECT
+      ic.id,
+      ic.deck_id,
+      d.name AS deck_name,
+      ic.raw_name,
+      ic.quantity,
+      ic.is_sideboard
+    FROM imported_deck_cards ic
+    JOIN deck_owners o ON o.deck_id = ic.deck_id
+    JOIN decks d ON d.id = ic.deck_id
+    WHERE o.username = ? AND ic.matched_scryfall_id IS NULL
+    ORDER BY d.updated_at DESC, ic.id ASC
+  `).bind(username).all();
+  return jsonResponse(rows.results ?? []);
+});
+
+// Resolve one imported raw card into a real deck card.
+addRoute('POST', '/api/imported-cards/:id/resolve', async (request, env, params) => {
+  await ensureImportedDeckCardsTable(env);
+  const importedId = parseInt(params.id, 10);
+  const { scryfall_id } = await parseBody<{ scryfall_id: string }>(request);
+  if (!importedId || !scryfall_id) return jsonResponse({ error: 'id and scryfall_id required' }, 400);
+
+  const row = await env.DB.prepare(`
+    SELECT id, deck_id, quantity, is_sideboard
+    FROM imported_deck_cards
+    WHERE id = ? AND matched_scryfall_id IS NULL
+  `).bind(importedId).first<{ id: number; deck_id: number; quantity: number; is_sideboard: number }>();
+  if (!row) return jsonResponse({ error: 'Imported card not found or already resolved' }, 404);
+
+  await env.DB.prepare('INSERT OR IGNORE INTO cards (scryfall_id) VALUES (?)').bind(scryfall_id).run();
+  await env.DB.prepare(`
+    INSERT INTO deck_cards (deck_id, scryfall_id, quantity, is_sideboard, is_commander)
+    VALUES (?, ?, ?, ?, 0)
+    ON CONFLICT (deck_id, scryfall_id, is_sideboard)
+    DO UPDATE SET quantity = deck_cards.quantity + excluded.quantity
+  `).bind(row.deck_id, scryfall_id, row.quantity || 1, row.is_sideboard ? 1 : 0).run();
+
+  await env.DB.prepare(`
+    UPDATE imported_deck_cards
+    SET matched_scryfall_id = ?
+    WHERE id = ?
+  `).bind(scryfall_id, importedId).run();
+
+  await env.DB.prepare('UPDATE decks SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(row.deck_id).run();
+  return jsonResponse({ resolved: true, imported_id: importedId, deck_id: row.deck_id });
 });
 
 // Update deck
@@ -442,13 +579,30 @@ addRoute('DELETE', '/api/decks/:id', async (_request, env, params) => {
 
 // Resolve deck list (card names -> scryfall_id + name) via Scryfall server-side. Batched to avoid subrequest limit.
 addRoute('POST', '/api/decks/resolve-list', async (request) => {
-  const { cards } = await parseBody<{ cards: Array<{ quantity: number; name: string; set?: string }> }>(request);
+  let body: { cards?: unknown };
+  try {
+    body = await parseBody<{ cards?: unknown }>(request);
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400);
+  }
+  const cards = body.cards;
   if (!cards || !Array.isArray(cards) || cards.length === 0) {
-    return jsonResponse({ error: 'cards array required' }, 400);
+    return jsonResponse({ error: 'Request must include a non-empty "cards" array' }, 400);
   }
   const items = cards
-    .filter((item) => (item.name ?? '').trim())
-    .map((item) => ({ name: (item.name ?? '').trim(), set: item.set, quantity: item.quantity }));
+    .filter((item: unknown) => item && typeof item === 'object' && (item as { name?: unknown }).name != null)
+    .map((item: unknown) => {
+      const o = item as { name: string; set?: string; quantity?: number };
+      return {
+        name: String(o.name ?? '').trim(),
+        set: o.set != null ? String(o.set).trim() || undefined : undefined,
+        quantity: typeof o.quantity === 'number' && o.quantity > 0 ? o.quantity : 1,
+      };
+    })
+    .filter((item) => item.name.length > 0);
+  if (items.length === 0) {
+    return jsonResponse({ error: 'No valid card names in "cards" array' }, 400);
+  }
   const { resolved: batchResolved, not_found } = await fetchCardsByNamesBatch(items);
   const resolved = batchResolved.map((r) => ({ scryfall_id: r.id, name: r.name, quantity: r.quantity }));
   return jsonResponse({ resolved, not_found });

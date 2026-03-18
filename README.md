@@ -70,6 +70,37 @@ Deployed on **Cloudflare Pages** at [tabletoptools.cc](https://tabletoptools.cc)
 
 See [CUSTOM_DOMAIN_SETUP.md](./CUSTOM_DOMAIN_SETUP.md) for domain configuration.
 
+### Frontend (Pages) + API (Worker) checklist
+
+- **No Cloudflare dashboard auth** – The app uses its own username login/signup against the Worker; you don’t need to configure Cloudflare Access or any other Cloudflare auth.
+- **API URL at build time** – The frontend bakes in the API base URL via `VITE_API_URL`. For Cloudflare Pages:
+  1. **Dashboard** → your project → **Settings** → **Environment variables**.
+  2. Add `VITE_API_URL` = `https://mtg-deckbuilder-api.marriesteyngcko.workers.dev` (or `https://api.tabletoptools.cc` if you use the custom domain).
+  3. Apply to **Production** (and Preview if you want).
+  4. **Redeploy** so the new build uses the variable (existing builds keep the old URL).
+- **CORS** – The Worker allows `*` origin, so the Pages site can call the API from the browser without extra config.
+- **Quick checks** – Open `https://mtg-deckbuilder-api.marriesteyngcko.workers.dev/api/health` (should return `{"status":"ok",...}`). On the live site, log in or sign up and try Import Deck; if those work, the frontend is talking to the API.
+
+### One-command deploy (build + Worker + Pages)
+
+From the repo root (with Wrangler logged in):
+
+```bash
+npm run deploy
+```
+
+This runs, in order: `npm run build` → `npm run deploy:api` (Worker) → `npm run deploy:pages` (uploads `dist/` to Cloudflare Pages).
+
+- **Pages project name:** The script uses `--project-name=mtg-deckbuilder`. If your Pages project has a different name (e.g. the one linked to tabletoptools.cc), either change the `deploy:pages` script in `package.json` or run manually:
+  `npx wrangler pages deploy dist --project-name=YOUR_PROJECT_NAME`
+- **Env for build:** If you use direct upload (this script), `VITE_API_URL` is taken from `.env.production` when you run `npm run build` locally. Set it there or export it before `npm run deploy` so the built frontend points at your API.
+
+### Verify you're on the latest frontend
+
+- **Build cleans `dist/`** before each build (`prebuild` script), so each deploy uploads a fresh bundle.
+- **HTML is no-cache** (`public/_headers`): `/` and `/index.html` use `Cache-Control: no-cache` so the browser requests the latest `index.html`, which references the new hashed JS (e.g. `/assets/index-XXXXX.js`).
+- To confirm: open your site → DevTools → Network tab → hard refresh (Ctrl+Shift+R). Check the main JS request: the filename should match the hash from the last build (see `dist/index.html` after `npm run build`).
+
 ## Usage Guide
 
 ### Building a Deck

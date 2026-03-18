@@ -65,6 +65,19 @@ CREATE TABLE IF NOT EXISTS deck_cards (
   FOREIGN KEY (scryfall_id) REFERENCES cards(scryfall_id) ON DELETE CASCADE
 );
 
+-- Raw imported deck cards (store by name first; resolve to scryfall_id later)
+CREATE TABLE IF NOT EXISTS imported_deck_cards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  deck_id INTEGER NOT NULL,
+  raw_name TEXT NOT NULL,
+  quantity INTEGER DEFAULT 1,
+  is_sideboard INTEGER DEFAULT 0,
+  matched_scryfall_id TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (deck_id) REFERENCES decks(id) ON DELETE CASCADE,
+  FOREIGN KEY (matched_scryfall_id) REFERENCES cards(scryfall_id) ON DELETE SET NULL
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_user_cards_username ON user_cards(username);
 CREATE INDEX IF NOT EXISTS idx_deck_owners_username ON deck_owners(username);

@@ -80,6 +80,13 @@ export function DeckAnalysis() {
 
   const handleAnalyze = async () => {
     if (!loadedDeck) return;
+    if (!loadedDeck.cards || loadedDeck.cards.length === 0) {
+      setMessage({
+        type: 'error',
+        text: 'This deck has no resolved cards yet. Go to Collection -> Unmatched Imported Cards and resolve cards first, then analyze.'
+      });
+      return;
+    }
     setLoading(true);
     setMessage(null);
     setAnalysis(null);

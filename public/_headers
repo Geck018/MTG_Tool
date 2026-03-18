@@ -5,10 +5,12 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
 
-# Cache static assets
+# Don't cache HTML/root so deployments always serve latest
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# Cache hashed assets (filenames change per build)
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
-
-# Don't cache HTML
-/*.html
-  Cache-Control: no-cache, no-store, must-revalidate

@@ -9,16 +9,12 @@ import { ExportButton } from './ExportButton';
 import { KeywordAnalyzer } from './KeywordAnalyzer';
 import { CollectionViewer } from './CollectionViewer';
 import { CardDetail } from './CardDetail';
-import { DeckGenerator } from './DeckGenerator';
-import { CommanderDeckGenerator } from './CommanderDeckGenerator';
 import { DeckAnalysis } from './DeckAnalysis';
 import { CardScanner } from './CardScanner';
+import { RulesChat } from './RulesChat';
 import { ScryfallService } from '../services/scryfall';
 import { deckApi } from '../services/api';
-import { MECHANICS, FORMATS } from '../services/deckGenerator';
 import type { Card } from '../types';
-import type { GeneratedDeck } from '../services/deckGenerator';
-import type { CommanderDeckOption } from '../services/commanderDeckGenerator';
 
 interface MTGAppProps {
   onBack: () => void;
@@ -26,7 +22,8 @@ interface MTGAppProps {
 
 export function MTGApp({ onBack }: MTGAppProps) {
   const { deck, addCard, removeCard, updateQuantity, moveCard, toggleWishlist, removeFromWishlist, updateWishlistQuantity, clearDeck, setDeckName } = useDeck();
-  const [activeTab, setActiveTab] = useState<'search' | 'build' | 'bulk' | 'collection' | 'generate' | 'commander' | 'import' | 'validate' | 'keywords' | 'analysis'>('search');
+  const [activeTab, setActiveTab] = useState<'import' | 'collection' | 'workspace' | 'search' | 'rules'>('import');
+  const [searchScope, setSearchScope] = useState<'scryfall' | 'collection'>('scryfall');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [collectionUpdateKey, setCollectionUpdateKey] = useState(0);
   const [showScanner, setShowScanner] = useState(false);
@@ -49,7 +46,7 @@ export function MTGApp({ onBack }: MTGAppProps) {
           }
         }
       }
-      setActiveTab('build');
+      setActiveTab('workspace');
     } catch (err) {
       console.error('Failed to load deck:', err);
     }
@@ -117,108 +114,70 @@ export function MTGApp({ onBack }: MTGAppProps) {
 
       <nav className="tab-nav">
         <button
-          className={activeTab === 'search' ? 'active' : ''}
-          onClick={() => setActiveTab('search')}
-        >
-          Search Cards
-        </button>
-        <button
-          className={activeTab === 'build' ? 'active' : ''}
-          onClick={() => setActiveTab('build')}
-        >
-          Build Deck
-        </button>
-        <button
-          className={activeTab === 'bulk' ? 'active' : ''}
-          onClick={() => setActiveTab('bulk')}
-        >
-          Import Bulk
-        </button>
-        <button
-          className={activeTab === 'collection' ? 'active' : ''}
-          onClick={() => setActiveTab('collection')}
-        >
-          My Collection
-        </button>
-        <button
-          className={activeTab === 'generate' ? 'active' : ''}
-          onClick={() => setActiveTab('generate')}
-        >
-          Generate Deck
-        </button>
-        <button
-          className={activeTab === 'commander' ? 'active' : ''}
-          onClick={() => setActiveTab('commander')}
-        >
-          Commander Deck
-        </button>
-        <button
           className={activeTab === 'import' ? 'active' : ''}
           onClick={() => setActiveTab('import')}
         >
           Import Deck
         </button>
         <button
-          className={activeTab === 'validate' ? 'active' : ''}
-          onClick={() => setActiveTab('validate')}
+          className={activeTab === 'collection' ? 'active' : ''}
+          onClick={() => setActiveTab('collection')}
         >
-          Validate
+          Collection
         </button>
         <button
-          className={activeTab === 'keywords' ? 'active' : ''}
-          onClick={() => setActiveTab('keywords')}
+          className={activeTab === 'workspace' ? 'active' : ''}
+          onClick={() => setActiveTab('workspace')}
         >
-          Keywords
+          Deck Workspace
         </button>
         <button
-          className={activeTab === 'analysis' ? 'active' : ''}
-          onClick={() => setActiveTab('analysis')}
+          className={activeTab === 'search' ? 'active' : ''}
+          onClick={() => setActiveTab('search')}
         >
-          Deck Analysis
+          Search
+        </button>
+        <button
+          className={activeTab === 'rules' ? 'active' : ''}
+          onClick={() => setActiveTab('rules')}
+        >
+          Rules + Keywords
         </button>
       </nav>
 
       <main className="app-main">
-        {activeTab === 'search' && (
-          <div className="search-view">
-            <CardSearch 
-              onCardSelect={handleCardSelect}
-              deckCards={[...deck.cards, ...deck.sideboard].map(dc => dc.card)}
-              wishlistCards={deck.wishlist.map(dc => dc.card)}
-              showAddButton={true}
-              onAddToDeck={(card) => addCard(card)}
-              onAddToWishlist={(card) => {
-                const inWishlist = deck.wishlist.some(wc => wc.card.id === card.id);
-                if (inWishlist) {
-                  removeFromWishlist(card.id);
-                } else {
-                  toggleWishlist(card, 1);
+        {activeTab === 'import' && (
+          <DeckImporter onDeckImported={(importedDeck) => {
+            clearDeck();
+            importedDeck.cards.forEach(dc => addCard(dc.card, dc.quantity, false));
+            importedDeck.sideboard.forEach(dc => addCard(dc.card, dc.quantity, true));
+            setDeckName(importedDeck.name);
+            setActiveTab('workspace');
+          }} />
+        )}
+
+        {activeTab === 'collection' && (
+          <div>
+            <CollectionViewer key={collectionUpdateKey} onLoadDeck={handleLoadDeck} />
+            <div style={{ marginTop: '1rem' }}>
+              <BulkImporter onCardsImported={(cards) => {
+                try {
+                  localStorage.setItem('mtg_bulk_collection', JSON.stringify(cards));
+                  setCollectionUpdateKey((prev) => prev + 1);
+                } catch (error) {
+                  console.error('Failed to save bulk collection:', error);
                 }
-              }}
-            />
-            {selectedCard && (
-              <CardDetail
-                card={selectedCard}
-                deckCards={[...deck.cards, ...deck.sideboard].map(dc => dc.card)}
-                onAddToDeck={(card) => addCard(card)}
-                onAddToWishlist={(card) => {
-                  const inWishlist = deck.wishlist.some(wc => wc.card.id === card.id);
-                  if (inWishlist) {
-                    removeFromWishlist(card.id);
-                  } else {
-                    toggleWishlist(card, 1);
-                  }
-                }}
-                isWishlisted={deck.wishlist.some(wc => wc.card.id === selectedCard.id)}
-                onClose={handleCloseCard}
-              />
-            )}
+              }} />
+            </div>
           </div>
         )}
 
-        {activeTab === 'build' && (
-          <div className="build-view">
-            <div className="deck-panel-full">
+        {activeTab === 'workspace' && (
+          <div>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+              Unified deck area: build/edit your current deck, then run validation and analysis on uploaded decks.
+            </p>
+            <div className="deck-panel-full" style={{ marginBottom: '1.5rem' }}>
               <DeckList
                 deck={deck}
                 onRemove={removeCard}
@@ -227,82 +186,73 @@ export function MTGApp({ onBack }: MTGAppProps) {
                 onToggleWishlist={(cardId, isSideboard) => {
                   const source = isSideboard ? deck.sideboard : deck.cards;
                   const card = source.find(dc => dc.card.id === cardId);
-                  if (card) {
-                    toggleWishlist(card.card, card.quantity);
-                  }
+                  if (card) toggleWishlist(card.card, card.quantity);
                 }}
                 onRemoveFromWishlist={removeFromWishlist}
                 onUpdateWishlistQuantity={updateWishlistQuantity}
                 onClear={clearDeck}
               />
             </div>
+            <DeckValidator />
+            <div style={{ marginTop: '1.5rem' }}>
+              <DeckAnalysis />
+            </div>
           </div>
         )}
 
-        {activeTab === 'bulk' && (
-          <BulkImporter onCardsImported={(cards) => {
-            try {
-              localStorage.setItem('mtg_bulk_collection', JSON.stringify(cards));
-            } catch (error) {
-              console.error('Failed to save bulk collection:', error);
-            }
-          }} />
+        {activeTab === 'search' && (
+          <div className="search-view">
+            <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem' }}>
+              <button className={`btn ${searchScope === 'scryfall' ? '' : 'btn-secondary'}`} onClick={() => setSearchScope('scryfall')}>
+                Search Scryfall
+              </button>
+              <button className={`btn ${searchScope === 'collection' ? '' : 'btn-secondary'}`} onClick={() => setSearchScope('collection')}>
+                Search My Collection
+              </button>
+            </div>
+            {searchScope === 'scryfall' ? (
+              <>
+                <CardSearch
+                  onCardSelect={handleCardSelect}
+                  deckCards={[...deck.cards, ...deck.sideboard].map(dc => dc.card)}
+                  wishlistCards={deck.wishlist.map(dc => dc.card)}
+                  showAddButton={true}
+                  onAddToDeck={(card) => addCard(card)}
+                  onAddToWishlist={(card) => {
+                    const inWishlist = deck.wishlist.some(wc => wc.card.id === card.id);
+                    if (inWishlist) removeFromWishlist(card.id);
+                    else toggleWishlist(card, 1);
+                  }}
+                />
+                {selectedCard && (
+                  <CardDetail
+                    card={selectedCard}
+                    deckCards={[...deck.cards, ...deck.sideboard].map(dc => dc.card)}
+                    onAddToDeck={(card) => addCard(card)}
+                    onAddToWishlist={(card) => {
+                      const inWishlist = deck.wishlist.some(wc => wc.card.id === card.id);
+                      if (inWishlist) removeFromWishlist(card.id);
+                      else toggleWishlist(card, 1);
+                    }}
+                    isWishlisted={deck.wishlist.some(wc => wc.card.id === selectedCard.id)}
+                    onClose={handleCloseCard}
+                  />
+                )}
+              </>
+            ) : (
+              <CollectionViewer key={`search-collection-${collectionUpdateKey}`} onLoadDeck={handleLoadDeck} />
+            )}
+          </div>
         )}
 
-        {activeTab === 'collection' && (
-          <CollectionViewer key={collectionUpdateKey} onLoadDeck={handleLoadDeck} />
-        )}
-
-        {activeTab === 'generate' && (
-          <DeckGenerator onDeckGenerated={(generatedDeck: GeneratedDeck) => {
-            clearDeck();
-            generatedDeck.cards.forEach(dc => {
-              addCard(dc.card, dc.quantity, false);
-            });
-            generatedDeck.suggestedCards.forEach(suggestion => {
-              toggleWishlist(suggestion.card, 1);
-            });
-            const formatName = FORMATS.find(f => f.id === generatedDeck.format)?.name || '';
-            const mechanicName = MECHANICS.find(m => m.id === generatedDeck.mechanic)?.name || 'Generated';
-            setDeckName(`${mechanicName} ${formatName} Deck`);
-            setActiveTab('build');
-          }} />
-        )}
-
-        {activeTab === 'commander' && (
-          <CommanderDeckGenerator onDeckGenerated={(option: CommanderDeckOption) => {
-            clearDeck();
-            option.cards.forEach(dc => {
-              addCard(dc.card, dc.quantity, false);
-            });
-            option.suggestedCards.forEach(suggestion => {
-              toggleWishlist(suggestion.card, 1);
-            });
-            setDeckName(option.name);
-            setActiveTab('build');
-          }} />
-        )}
-
-        {activeTab === 'import' && (
-          <DeckImporter onDeckImported={(importedDeck) => {
-            clearDeck();
-            importedDeck.cards.forEach(dc => addCard(dc.card, dc.quantity, false));
-            importedDeck.sideboard.forEach(dc => addCard(dc.card, dc.quantity, true));
-            setDeckName(importedDeck.name);
-            setActiveTab('build');
-          }} />
-        )}
-
-        {activeTab === 'validate' && (
-          <DeckValidator />
-        )}
-
-        {activeTab === 'keywords' && (
-          <KeywordAnalyzer deck={deck} />
-        )}
-
-        {activeTab === 'analysis' && (
-          <DeckAnalysis />
+        {activeTab === 'rules' && (
+          <div>
+            <RulesChat gameSystem="mtg" />
+            <div style={{ marginTop: '1.5rem' }}>
+              <h3 style={{ marginBottom: '0.5rem' }}>Keywords (current deck)</h3>
+              <KeywordAnalyzer deck={deck} />
+            </div>
+          </div>
         )}
       </main>
 

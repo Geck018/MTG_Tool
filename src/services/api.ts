@@ -20,21 +20,43 @@ export class ApiError extends Error {
 }
 
 async function fetchApi<T>(
-  endpoint: string, 
+  endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/fetch|network|failed|load/i.test(msg)) {
+      throw new ApiError(
+        0,
+        `Cannot reach API at ${API_BASE}. Check that VITE_API_URL is set for this build and the backend is running.`
+      );
+    }
+    throw e;
+  }
 
-  const data = await response.json();
+  let data: unknown;
+  try {
+    const text = await response.text();
+    data = text.length ? (JSON.parse(text) as unknown) : {};
+  } catch {
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText || 'API request failed');
+    }
+    throw new ApiError(response.status, 'Invalid response from server');
+  }
 
   if (!response.ok) {
-    throw new ApiError(response.status, data.error || 'API request failed');
+    const errMsg = typeof (data as { error?: string }).error === 'string' ? (data as { error: string }).error : 'API request failed';
+    throw new ApiError(response.status, errMsg);
   }
 
   return data as T;
@@ -75,6 +97,11 @@ export const userApi = {
 
   getDecks: (username: string) => 
     fetchApi<UserDeck[]>(`/api/users/${encodeURIComponent(username)}/decks`),
+
+  getUnmatchedCards: (username: string) =>
+    fetchApi<Array<{ id: number; deck_id: number; deck_name: string; raw_name: string; quantity: number; is_sideboard: number }>>(
+      `/api/users/${encodeURIComponent(username)}/unmatched-cards`
+    ),
 };
 
 // ============================================
@@ -157,6 +184,23 @@ export const deckApi = {
       '/api/decks/resolve-list',
       { method: 'POST', body: JSON.stringify({ cards }) }
     ),
+
+  importRaw: (payload: {
+    name: string;
+    owner_username: string;
+    format?: string;
+    cards: Array<{ name: string; quantity?: number; is_sideboard?: boolean }>;
+  }) =>
+    fetchApi<{ id: number; created: boolean }>('/api/decks/import-raw', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  resolveImportedCard: (id: number, scryfall_id: string) =>
+    fetchApi<{ resolved: boolean; imported_id: number; deck_id: number }>(`/api/imported-cards/${id}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ scryfall_id }),
+    }),
 
   share: (deckId: number, username: string, role: 'owner' | 'editor' | 'viewer' = 'viewer') => 
     fetchApi<{ deck_id: number; username: string; role: string; shared: boolean }>(`/api/decks/${deckId}/share`, {

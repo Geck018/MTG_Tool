@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import type { BulkCard } from '../types';
 import { CollectionService } from '../utils/collection';
 import { ScryfallService } from '../services/scryfall';
-import { userApi } from '../services/api';
+import { userApi, deckApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { Card } from '../types';
 import type { UserDeck } from '../database/types';
@@ -19,6 +19,15 @@ interface CollectionCard extends BulkCard {
   failed?: boolean; // Mark cards that failed to load
 }
 
+interface UnmatchedImportedCard {
+  id: number;
+  deck_id: number;
+  deck_name: string;
+  raw_name: string;
+  quantity: number;
+  is_sideboard: number;
+}
+
 type SortOption = 'name' | 'cmc' | 'rarity' | 'set' | 'quantity';
 type ViewMode = 'tile' | 'list';
 
@@ -31,6 +40,12 @@ export function CollectionViewer({ onLoadDeck }: CollectionViewerProps = {}) {
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [viewMode, setViewMode] = useState<ViewMode>('tile');
   const [myDecks, setMyDecks] = useState<UserDeck[]>([]);
+  const [unmatchedCards, setUnmatchedCards] = useState<UnmatchedImportedCard[]>([]);
+  const [resolvingCardId, setResolvingCardId] = useState<number | null>(null);
+  const [resolveMessage, setResolveMessage] = useState<string | null>(null);
+  const [editingDeckId, setEditingDeckId] = useState<number | null>(null);
+  const [editingDeckName, setEditingDeckName] = useState('');
+  const [deckActionLoadingId, setDeckActionLoadingId] = useState<number | null>(null);
   const [decksLoading, setDecksLoading] = useState(false);
   const [decksError, setDecksError] = useState<string | null>(null);
   const loadingRef = useRef(false);
@@ -55,6 +70,16 @@ export function CollectionViewer({ onLoadDeck }: CollectionViewerProps = {}) {
       })
       .finally(() => setDecksLoading(false));
   }, [user?.username]);
+
+  useEffect(() => {
+    if (!user?.username) {
+      setUnmatchedCards([]);
+      return;
+    }
+    userApi.getUnmatchedCards(user.username)
+      .then((rows) => setUnmatchedCards(rows))
+      .catch(() => setUnmatchedCards([]));
+  }, [user?.username, decksLoading]);
   
   // Cleanup on unmount
   useEffect(() => {
@@ -291,6 +316,85 @@ export function CollectionViewer({ onLoadDeck }: CollectionViewerProps = {}) {
   const cardsWithData = collection.filter(c => c.cardData).length;
   const loadingProgress = uniqueCards > 0 ? `${cardsWithData}/${uniqueCards}` : '';
 
+  const resolveUnmatched = async (row: UnmatchedImportedCard) => {
+    if (resolvingCardId) return;
+    setResolvingCardId(row.id);
+    setResolveMessage(null);
+    try {
+      const lookup = await deckApi.resolveList([{ quantity: 1, name: row.raw_name }]);
+      const first = lookup.resolved[0];
+      if (!first) {
+        setResolveMessage(`Could not find a Scryfall match for "${row.raw_name}".`);
+        setResolvingCardId(null);
+        return;
+      }
+      await deckApi.resolveImportedCard(row.id, first.scryfall_id);
+      setUnmatchedCards((prev) => prev.filter((c) => c.id !== row.id));
+      setResolveMessage(`Resolved "${row.raw_name}" -> "${first.name}"`);
+      setDecksLoading(true);
+      userApi.getDecks(user!.username).then(setMyDecks).finally(() => setDecksLoading(false));
+    } catch (e) {
+      setResolveMessage(e instanceof Error ? e.message : 'Failed to resolve card.');
+    } finally {
+      setResolvingCardId(null);
+    }
+  };
+
+  const refreshMyDecks = async () => {
+    if (!user?.username) return;
+    setDecksLoading(true);
+    setDecksError(null);
+    try {
+      const decks = await userApi.getDecks(user.username);
+      setMyDecks(decks);
+    } catch (err) {
+      setDecksError((err as { message?: string })?.message || 'Failed to load decks');
+      setMyDecks([]);
+    } finally {
+      setDecksLoading(false);
+    }
+  };
+
+  const startRenameDeck = (deck: UserDeck) => {
+    setEditingDeckId(deck.deck_id);
+    setEditingDeckName(deck.deck_name);
+  };
+
+  const cancelRenameDeck = () => {
+    setEditingDeckId(null);
+    setEditingDeckName('');
+  };
+
+  const saveRenameDeck = async (deckId: number) => {
+    const name = editingDeckName.trim();
+    if (!name) return;
+    setDeckActionLoadingId(deckId);
+    try {
+      await deckApi.update(deckId, { name });
+      await refreshMyDecks();
+      cancelRenameDeck();
+    } catch (err) {
+      setDecksError((err as { message?: string })?.message || 'Failed to rename deck');
+    } finally {
+      setDeckActionLoadingId(null);
+    }
+  };
+
+  const deleteDeck = async (deck: UserDeck) => {
+    const ok = window.confirm(`Delete deck "${deck.deck_name}"? This cannot be undone.`);
+    if (!ok) return;
+    setDeckActionLoadingId(deck.deck_id);
+    try {
+      await deckApi.delete(deck.deck_id);
+      await refreshMyDecks();
+      if (editingDeckId === deck.deck_id) cancelRenameDeck();
+    } catch (err) {
+      setDecksError((err as { message?: string })?.message || 'Failed to delete deck');
+    } finally {
+      setDeckActionLoadingId(null);
+    }
+  };
+
   return (
     <div className="collection-viewer">
       <div className="collection-header">
@@ -321,19 +425,94 @@ export function CollectionViewer({ onLoadDeck }: CollectionViewerProps = {}) {
           <ul className="my-decks-list">
             {myDecks.map((d) => (
               <li key={d.deck_id} className="my-decks-item">
-                <span className="my-decks-item-name">{d.deck_name}</span>
-                <span className="my-decks-item-meta">
-                  {d.format} · {d.card_count} cards
-                </span>
-                {onLoadDeck && (
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    onClick={() => onLoadDeck(d.deck_id)}
-                  >
-                    Load
-                  </button>
+                {editingDeckId === d.deck_id ? (
+                  <>
+                    <input
+                      type="text"
+                      className="search-input"
+                      value={editingDeckName}
+                      onChange={(e) => setEditingDeckName(e.target.value)}
+                      style={{ maxWidth: '260px' }}
+                    />
+                    <span className="my-decks-item-meta">
+                      {d.format} · {d.card_count} cards
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={() => saveRenameDeck(d.deck_id)}
+                      disabled={deckActionLoadingId === d.deck_id || !editingDeckName.trim()}
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={cancelRenameDeck}
+                      disabled={deckActionLoadingId === d.deck_id}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="my-decks-item-name">{d.deck_name}</span>
+                    <span className="my-decks-item-meta">
+                      {d.format} · {d.card_count} cards
+                    </span>
+                    {onLoadDeck && (
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => onLoadDeck(d.deck_id)}
+                        disabled={deckActionLoadingId === d.deck_id}
+                      >
+                        Load
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={() => startRenameDeck(d)}
+                      disabled={deckActionLoadingId === d.deck_id}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={() => deleteDeck(d)}
+                      disabled={deckActionLoadingId === d.deck_id}
+                    >
+                      Delete
+                    </button>
+                  </>
                 )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="my-decks-section" style={{ marginTop: '1rem' }}>
+        <h3 className="my-decks-title">Unmatched Imported Cards</h3>
+        {resolveMessage && <p className="my-decks-message">{resolveMessage}</p>}
+        {unmatchedCards.length === 0 ? (
+          <p className="my-decks-message">No unmatched imported cards.</p>
+        ) : (
+          <ul className="my-decks-list">
+            {unmatchedCards.map((c) => (
+              <li key={c.id} className="my-decks-item">
+                <span className="my-decks-item-name">{c.quantity}x {c.raw_name}</span>
+                <span className="my-decks-item-meta">{c.deck_name}{c.is_sideboard ? ' • Sideboard' : ''}</span>
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  onClick={() => resolveUnmatched(c)}
+                  disabled={resolvingCardId === c.id}
+                >
+                  {resolvingCardId === c.id ? 'Resolving...' : 'Resolve'}
+                </button>
               </li>
             ))}
           </ul>
