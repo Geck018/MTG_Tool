@@ -7,6 +7,7 @@ import {
   type ChatMessage, 
   type GameSystem 
 } from '../services/rules/rulesChat';
+import { rulesApi } from '../services/api';
 import type { Rule } from '../services/rules/mtgRules';
 
 // Simple markdown parser for chat messages
@@ -132,16 +133,34 @@ export function RulesChat({ gameSystem = 'mtg', onBack }: RulesChatProps) {
 
     // Check for quick answer first
     const quickAnswer = getQuickAnswer(input);
-    
-    // Process the query
+
+    let content = quickAnswer || '';
+    let matchedRules: Rule[] = [];
+
+    if (!quickAnswer) {
+      try {
+        const aiResult = await rulesApi.chat(input, gameSystem);
+        if (aiResult?.response?.trim()) {
+          content = aiResult.response.trim();
+        }
+      } catch {
+        // Silent fallback to local deterministic logic
+      }
+    }
+
+    // Local fallback and related rules context
     const { response, rules, suggestions: _suggestions } = processRulesQuery(input, gameSystem);
     void _suggestions; // Future: could use for suggested follow-up questions
+    if (!content) {
+      content = response;
+    }
+    matchedRules = quickAnswer ? [] : rules;
 
     const assistantMessage: ChatMessage = {
       id: `assistant-${Date.now()}`,
       role: 'assistant',
-      content: quickAnswer || response,
-      rules: quickAnswer ? [] : rules,
+      content,
+      rules: matchedRules,
       timestamp: new Date()
     };
 

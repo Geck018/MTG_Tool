@@ -304,6 +304,199 @@ const KEYWORD_SYNONYMS: { [key: string]: string[] } = {
   'lose': ['lose', 'loss', 'losing', 'defeat'],
 };
 
+const RESOLUTION_INTENT_PATTERNS = [
+  /get past/i,
+  /how do (i|we) beat/i,
+  /how can (i|we) beat/i,
+  /deal with/i,
+  /play around/i,
+  /counter/i,
+  /stop/i,
+  /against/i,
+];
+
+type ParsedCreature = {
+  name: string;
+  power?: number;
+  toughness?: number;
+  keywords: string[];
+};
+
+type ParsedCombatScenario = {
+  attacker: ParsedCreature;
+  blocker: ParsedCreature;
+};
+
+const CARD_PROFILES: Record<string, ParsedCreature> = {
+  'colossal dreadmaw': {
+    name: 'Colossal Dreadmaw',
+    power: 6,
+    toughness: 6,
+    keywords: ['trample'],
+  },
+  'gigantosaurus': {
+    name: 'Gigantosaurus',
+    power: 10,
+    toughness: 10,
+    keywords: [],
+  },
+  'llanowar elves': {
+    name: 'Llanowar Elves',
+    power: 1,
+    toughness: 1,
+    keywords: [],
+  },
+};
+
+const KEYWORD_COUNTERPLAY: { [key: string]: string } = {
+  'reach': `**How this resolves in game (getting past reach):**
+• Reach only matters when your creature has flying.
+• If you attack with non-flyers, reach does nothing special.
+• If you are winning through flyers, remove/tap the reach blocker before combat, or force bad blocks.
+• Evasion like menace, unblockable effects, or protection can make blocks harder or impossible.
+
+**Practical line:** clear their reach creature first, then attack with flyers once the skies are open.`,
+  'deathtouch': `**How this resolves in game (playing around deathtouch):**
+• Deathtouch makes even 1 damage lethal to creatures.
+• Use removal/bounce/exile instead of normal combat trades.
+• First strike and pump spells can still matter if your creature survives before damage is dealt back.
+
+**Practical line:** avoid fair combat into deathtouch; answer it with spells or forced blocks.`,
+  'hexproof': `**How this resolves in game (playing around hexproof):**
+• Opponents cannot target that permanent directly.
+• Board wipes, sacrifice effects, and non-targeted effects still work.
+• Racing and going wider can ignore a single protected threat.
+
+**Practical line:** switch from targeted removal to non-targeted answers.`,
+  'indestructible': `**How this resolves in game (beating indestructible):**
+• "Destroy" and lethal damage won't remove it.
+• Exile, bounce, sacrifice, or -X/-X effects still answer it.
+• You can also win by going around it with evasion or pressure elsewhere.
+
+**Practical line:** use non-destroy interaction or ignore it and push damage around it.`,
+};
+
+function hasResolutionIntent(query: string): boolean {
+  return RESOLUTION_INTENT_PATTERNS.some(pattern => pattern.test(query));
+}
+
+function parseCreatureText(raw: string): ParsedCreature {
+  const cleaned = raw.trim().replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '');
+  const lower = cleaned.toLowerCase();
+
+  const profile = CARD_PROFILES[lower];
+  const statsMatch = cleaned.match(/(\d+)\s*\/\s*(\d+)/);
+  const detectedKeywords = detectKeywords(cleaned);
+
+  return {
+    name: profile?.name || cleaned,
+    power: statsMatch ? Number(statsMatch[1]) : profile?.power,
+    toughness: statsMatch ? Number(statsMatch[2]) : profile?.toughness,
+    keywords: [...new Set([...(profile?.keywords || []), ...detectedKeywords])],
+  };
+}
+
+function parseCombatScenario(query: string): ParsedCombatScenario | null {
+  const normalized = query.toLowerCase().replace(/[\r\n]+/g, ' ');
+  const hasCombatShape = /(attack|attacks|attacking).*(block|blocks|blocking)/i.test(normalized);
+  if (!hasCombatShape) return null;
+
+  const attackerBlocksPattern = query.match(
+    /attack(?:ing)?(?: with)?\s+(.+?)\s*(?:,|and|then)?\s*(?:my\s+)?(?:opponent|they|defender)?\s*blocks?(?: with)?\s+(.+?)(?:[.!?]|$)/i
+  );
+  const getsBlockedPattern = query.match(
+    /attack(?:ing)?(?: with)?\s+(.+?)\s*(?:,|and|then)?\s*(?:gets?|is)?\s*blocked(?: by)?\s+(.+?)(?:[.!?]|$)/i
+  );
+  const blockedWhileAttackingPattern = query.match(
+    /(.+?)\s+attacks?.*?blocked(?: by)?\s+(.+?)(?:[.!?]|$)/i
+  );
+
+  const attackBlockMatch = attackerBlocksPattern || getsBlockedPattern || blockedWhileAttackingPattern;
+  if (!attackBlockMatch) return null;
+
+  const attackerText = attackBlockMatch[1].trim();
+  const blockerText = attackBlockMatch[2].trim();
+
+  if (!attackerText || !blockerText) return null;
+
+  return {
+    attacker: parseCreatureText(attackerText),
+    blocker: parseCreatureText(blockerText),
+  };
+}
+
+function getRuleByTitle(title: string): Rule | undefined {
+  return MTG_RULES.find(rule => rule.title.toLowerCase() === title.toLowerCase());
+}
+
+function buildCombatScenarioResponse(query: string): string | null {
+  const scenario = parseCombatScenario(query);
+  if (!scenario) return null;
+
+  const attackerHasTrample = scenario.attacker.keywords.includes('trample');
+  const blockerHasDeathtouch = scenario.blocker.keywords.includes('deathtouch');
+  const attackerPower = scenario.attacker.power;
+  const blockerToughness = scenario.blocker.toughness;
+
+  if (attackerHasTrample && blockerHasDeathtouch && attackerPower && blockerToughness) {
+    const trampleToPlayer = Math.max(0, attackerPower - blockerToughness);
+    const trampleRule = getRuleByTitle('Trample');
+    const deathtouchRule = getRuleByTitle('Deathtouch');
+    const combatDamageRule = getRuleByTitle('Combat Damage');
+
+    return `**In this situation:** your ${scenario.attacker.name} attacks and is blocked by ${scenario.blocker.name}.
+
+**What happens:** you assign ${blockerToughness} damage to the blocker (lethal for trample assignment), and ${trampleToPlayer} damage tramples over to the defending player/planeswalker. The blocker deals deathtouch damage back, so your attacker also dies in combat.
+
+**Why:** this comes from the interaction between **${trampleRule?.number || '702.19'} (${trampleRule?.title || 'Trample'})**, **${deathtouchRule?.number || '702.2'} (${deathtouchRule?.title || 'Deathtouch'})**, and **${combatDamageRule?.number || '510.1'} (${combatDamageRule?.title || 'Combat Damage'})**.`;
+  }
+
+  return `**In this situation:** ${scenario.attacker.name} is attacking and ${scenario.blocker.name} is blocking.
+
+**What happens:** both creatures assign and deal combat damage at the same time (unless first/double strike is involved), then state-based actions clean up anything with lethal damage.
+
+If you include power/toughness and keywords for both creatures, I can resolve the exact outcome step-by-step.`;
+}
+
+function buildResolutionGuidance(query: string): string | null {
+  if (!hasResolutionIntent(query)) return null;
+
+  const detectedKeywords = detectKeywords(query);
+  for (const keyword of detectedKeywords) {
+    if (KEYWORD_COUNTERPLAY[keyword]) {
+      return KEYWORD_COUNTERPLAY[keyword];
+    }
+  }
+
+  return `**How this resolves in game:**
+• Identify which spell/ability resolves first (last-in, first-out on the stack).
+• Check legal targets as each item resolves.
+• Apply the effect in order, then re-check state-based actions.
+
+If you share the exact board state, I can walk through it step-by-step.`;
+}
+
+function buildInteractionScenario(query: string, rules: Rule[]): string | null {
+  if (!hasResolutionIntent(query) || rules.length === 0) return null;
+
+  const primaryRule = rules[0];
+  const secondaryRule = rules[1];
+
+  if (secondaryRule) {
+    return `**In this situation:** ${primaryRule.title} interacts with ${secondaryRule.title}.
+
+**What happens:** the game applies **${primaryRule.number}** first where relevant, then checks **${secondaryRule.number}** as the overlapping restriction/exception.
+
+**Why:** this outcome comes from the interaction between **${primaryRule.number} (${primaryRule.title})** and **${secondaryRule.number} (${secondaryRule.title})**.`;
+  }
+
+  return `**In this situation:** ${primaryRule.title} is the key rule.
+
+**What happens:** play proceeds using **${primaryRule.number}** for this interaction.
+
+**Why:** this outcome follows directly from **${primaryRule.number} (${primaryRule.title})**.`;
+}
+
 // Expand query with synonyms
 function expandQuery(query: string): string {
   let expanded = query.toLowerCase();
@@ -348,9 +541,21 @@ function extractKeyTerms(query: string): string[] {
 
 // Generate a helpful response based on the query and found rules
 function generateResponse(query: string, rules: Rule[], _gameSystem: GameSystem): string {
+  const combatScenarioResponse = buildCombatScenarioResponse(query);
+  if (combatScenarioResponse) {
+    return combatScenarioResponse;
+  }
+
+  const resolutionGuidance = buildResolutionGuidance(query);
+  const interactionScenario = buildInteractionScenario(query, rules);
+
   // First, try to find a pre-written explanation for this topic
   const topicExplanation = findTopicExplanation(query);
   if (topicExplanation) {
+    if (resolutionGuidance || interactionScenario) {
+      const additions = [interactionScenario, resolutionGuidance].filter(Boolean).join('\n\n---\n\n');
+      return `${topicExplanation}\n\n---\n\n${additions}`;
+    }
     return topicExplanation;
   }
   
@@ -360,6 +565,11 @@ function generateResponse(query: string, rules: Rule[], _gameSystem: GameSystem)
     
     // Create a natural explanation from the rule
     let explanation = `**${bestRule.title}**\n\n${bestRule.text}`;
+    
+    if (interactionScenario || resolutionGuidance) {
+      const additions = [interactionScenario, resolutionGuidance].filter(Boolean).join('\n\n---\n\n');
+      explanation += `\n\n---\n\n${additions}`;
+    }
     
     // Add context if we have multiple related rules
     if (rules.length > 1) {

@@ -6,6 +6,9 @@
 
 export interface Env {
   DB: D1Database;
+  AI?: {
+    run: (model: string, input: Record<string, unknown>) => Promise<{ response?: string }>;
+  };
 }
 
 // CORS headers for frontend access
@@ -42,6 +45,17 @@ const SCRYFALL_HEADERS = {
 };
 /** Max fallback lookups per request. Each can be 2 subrequests; 2 chunks = 2 collection calls. Stay under Worker limit (~50). */
 const MAX_FALLBACK_PER_REQUEST = 12;
+
+interface ScryfallCardSnapshot {
+  id: string;
+  name: string;
+  mana_cost?: string;
+  type_line?: string;
+  oracle_text?: string;
+  power?: string;
+  toughness?: string;
+  keywords?: string[];
+}
 
 /** Resolve a card by name (and optional set) via Scryfall. Max 2 subrequests (exact then fuzzy) to conserve limit. */
 async function fetchCardByName(name: string, set?: string): Promise<{ id: string; name: string } | null> {
@@ -176,6 +190,152 @@ function addRoute(method: string, path: string, handler: RouteHandler) {
   const pattern = new RegExp('^' + path.replace(/:(\w+)/g, '(?<$1>[^/]+)') + '$');
   routes.push({ method, pattern, handler });
 }
+
+function extractCardNameCandidates(query: string): string[] {
+  const candidates: string[] = [];
+  const patterns = [
+    /attack(?:ing)?(?: with)?\s+(.+?)(?:,| and | then | but | blocked| block|$)/i,
+    /blocks?(?: with)?\s+(.+?)(?:,| and | then | but |$)/i,
+    /blocked(?: by)?\s+(.+?)(?:,| and | then | but |$)/i,
+    /cast(?:ing)?\s+(.+?)(?:,| and | then | but |$)/i,
+    /play(?:ing)?\s+(.+?)(?:,| and | then | but |$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    if (!match?.[1]) continue;
+
+    const cleaned = match[1]
+      .replace(/\b(a|an|the|my|their|opponent'?s)\b/gi, ' ')
+      .replace(/[.?!]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (cleaned.length >= 3 && cleaned.length <= 60) {
+      candidates.push(cleaned);
+    }
+  }
+
+  return [...new Set(candidates)].slice(0, 3);
+}
+
+async function fetchCardSnapshotByName(name: string): Promise<ScryfallCardSnapshot | null> {
+  const exactUrl = `${SCRYFALL_BASE}/cards/named?exact=${encodeURIComponent(name)}`;
+  let res = await fetch(exactUrl);
+
+  if (!res.ok) {
+    const fuzzyUrl = `${SCRYFALL_BASE}/cards/named?fuzzy=${encodeURIComponent(name)}`;
+    res = await fetch(fuzzyUrl);
+  }
+
+  if (!res.ok) return null;
+
+  const card = (await res.json()) as ScryfallCardSnapshot;
+  return {
+    id: card.id,
+    name: card.name,
+    mana_cost: card.mana_cost,
+    type_line: card.type_line,
+    oracle_text: card.oracle_text,
+    power: card.power,
+    toughness: card.toughness,
+    keywords: card.keywords || [],
+  };
+}
+
+async function getRulesAIResponse(
+  env: Env,
+  query: string,
+  gameSystem: string,
+  cardSnapshots: ScryfallCardSnapshot[]
+): Promise<string> {
+  if (!env.AI) {
+    throw new Error('Workers AI binding is not configured');
+  }
+
+  const systemPrompt = `You are an MTG rules assistant.
+Explain what happens in plain language with correct MTG rules logic.
+Prefer this response format:
+1) In this situation
+2) What happens
+3) Why (rule interaction)
+If info is missing, ask one short clarifying question.
+Do not invent card text you are unsure about.`;
+
+  const cardContext = cardSnapshots.length > 0
+    ? cardSnapshots
+        .map(
+          (card, index) =>
+            `${index + 1}) ${card.name}
+- Mana Cost: ${card.mana_cost || 'N/A'}
+- Type: ${card.type_line || 'N/A'}
+- P/T: ${card.power && card.toughness ? `${card.power}/${card.toughness}` : 'N/A'}
+- Keywords: ${(card.keywords || []).join(', ') || 'None listed'}
+- Oracle: ${card.oracle_text || 'N/A'}`
+        )
+        .join('\n')
+    : 'No explicit card data found from Scryfall.';
+
+  const userPrompt = `Game: ${gameSystem}
+Question: ${query}
+
+Scryfall card context:
+${cardContext}`;
+
+  const aiResult = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.2,
+    max_tokens: 350,
+  });
+
+  const answer = aiResult?.response?.trim();
+  if (!answer) {
+    throw new Error('Workers AI returned an empty response');
+  }
+
+  return answer;
+}
+
+// ============================================
+// RULES CHAT ROUTES (Workers AI)
+// ============================================
+addRoute('POST', '/api/rules/chat', async (request, env) => {
+  const { query, gameSystem } = await parseBody<{ query?: string; gameSystem?: string }>(request);
+  const cleanQuery = (query || '').trim();
+  const system = (gameSystem || 'mtg').toLowerCase();
+
+  if (!cleanQuery) {
+    return jsonResponse({ error: 'query is required' }, 400);
+  }
+
+  if (system !== 'mtg') {
+    return jsonResponse({
+      response: 'I currently support MTG rules best. Please ask an MTG scenario for now.',
+      used_ai: false,
+      fallback: true,
+    });
+  }
+
+  try {
+    const cardCandidates = extractCardNameCandidates(cleanQuery);
+    const cardSnapshotsRaw = await Promise.all(cardCandidates.map(fetchCardSnapshotByName));
+    const cardSnapshots = cardSnapshotsRaw.filter((card): card is ScryfallCardSnapshot => card !== null);
+
+    const response = await getRulesAIResponse(env, cleanQuery, system, cardSnapshots);
+    return jsonResponse({ response, used_ai: true, fallback: false, cards: cardSnapshots });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown AI error';
+    return jsonResponse({
+      response: 'I had trouble generating an AI ruling right now. Falling back to local rules logic.',
+      used_ai: false,
+      fallback: true,
+      error: message,
+    });
+  }
+});
 
 // ============================================
 // AUTH ROUTES (Simple username-based)

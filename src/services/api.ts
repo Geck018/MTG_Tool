@@ -312,6 +312,24 @@ export const playApi = {
 };
 
 // ============================================
+// RULES CHAT API (Workers AI)
+// ============================================
+export interface RulesChatApiResponse {
+  response: string;
+  used_ai: boolean;
+  fallback: boolean;
+  error?: string;
+}
+
+export const rulesApi = {
+  chat: (query: string, gameSystem: 'mtg' | 'warhammer' | 'general' = 'mtg') =>
+    fetchApi<RulesChatApiResponse>('/api/rules/chat', {
+      method: 'POST',
+      body: JSON.stringify({ query, gameSystem }),
+    }),
+};
+
+// ============================================
 // HEALTH CHECK
 // ============================================
 
@@ -325,6 +343,7 @@ export const api = {
   collection: collectionApi,
   decks: deckApi,
   play: playApi,
+  rules: rulesApi,
   health: healthCheck,
 };
 

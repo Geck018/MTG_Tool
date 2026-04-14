@@ -24,3 +24,6 @@ port = 8787
 # Environment variables (if needed)
 [vars]
 ENVIRONMENT = "production"
+
+[ai]
+binding = "AI"
